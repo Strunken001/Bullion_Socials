@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Remote Browser Control (Mobile)</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f1117;
+      color: #e1e4e8;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .header {
+      width: 100%;
+      padding: 16px 24px;
+      background: #161820;
+      border-bottom: 1px solid #2d2f3a;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .header h1 {
+      font-size: 18px;
+      font-weight: 600;
+      color: #58a6ff;
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    select {
+      padding: 8px 12px;
+      background: #21262d;
+      border: 1px solid #30363d;
+      color: #c9d1d9;
+      border-radius: 6px;
+      font-size: 13px;
+      outline: none;
+    }
+
+    select:focus {
+      border-color: #58a6ff;
+    }
+
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: #8b949e;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #f85149;
+      transition: background 0.3s;
+    }
+
+    .status-dot.connected {
+      background: #3fb950;
+    }
+
+    .status-dot.connecting {
+      background: #d29922;
+      animation: pulse 1s infinite;
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.4;
+      }
+    }
+
+    button {
+      padding: 8px 16px;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      background: #21262d;
+      color: #c9d1d9;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    button:hover {
+      background: #30363d;
+      border-color: #8b949e;
+    }
+
+    button.primary {
+      background: #238636;
+      border-color: #2ea043;
+      color: white;
+    }
+
+    button.primary:hover {
+      background: #2ea043;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* Mobile Frame Styling */
+    .mobile-frame {
+      margin: 24px auto;
+      border: 12px solid #2d2f3a;
+      border-radius: 36px;
+      background: #000;
+      overflow: hidden;
+      position: relative;
+      box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
+    }
+
+    .canvas-container {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      cursor: touch;
+      /* Mobile feel */
+    }
+
+    .input-bar {
+      width: 100%;
+      max-width: 600px;
+      padding: 0 16px 24px;
+      display: flex;
+      gap: 8px;
+    }
+
+    .input-bar input {
+      flex: 1;
+      padding: 10px 14px;
+      background: #161820;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      color: #c9d1d9;
+      font-size: 14px;
+      outline: none;
+    }
+
+    .input-bar input:focus {
+      border-color: #58a6ff;
+    }
+
+    .overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #8b949e;
+      font-size: 16px;
+      text-align: center;
+      padding: 20px;
+      z-index: 5;
+    }
+
+    .overlay.hidden {
+      display: none;
+    }
+
+    .info-bar {
+      width: 100%;
+      max-width: 600px;
+      padding: 0 16px 8px;
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: #484f58;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="header">
+    <h1>📱 Remote Mobile</h1>
+    <div class="controls">
+      <select id="platformSelect">
+        <option value="facebook">Facebook</option>
+        <option value="instagram">Instagram</option>
+        <option value="twitter">Twitter / X</option>
+        <option value="tiktok">TikTok</option>
+        <option value="linkedin">LinkedIn</option>
+        <option value="snapchat">Snapchat</option>
+      </select>
+      <div class="status">
+        <div class="status-dot" id="statusDot"></div>
+      </div>
+      <button class="primary" id="startBtn" onclick="startSession()">Start</button>
+      <button id="stopBtn" onclick="stopSession()" disabled>Stop</button>
+    </div>
+  </div>
+
+  <div class="mobile-frame" style="width: 345px; height: 700px;">
+    <div class="canvas-container">
+      <canvas id="screen" width="390" height="844"></canvas>
+      <div class="overlay" id="overlay">Select a platform and click Start</div>
+    </div>
+  </div>
+
+  <div class="info-bar">
+    <span id="resolution">390 × 844 (iPhone 13)</span>
+    <span id="fps">0 fps</span>
+  </div>
+
+  <div class="input-bar">
+    <input type="text" id="textInput" placeholder="Type text..."
+      onkeydown="if(event.key==='Enter'){sendText(); event.preventDefault();}">
+    <button onclick="sendText()">Send</button>
+  </div>
+
+  <script>
+    // ===================== Configuration =====================
+    const SERVER_URL = "https://felix-orthomorphic-manageably.ngrok-free.dev";
+
+    // iPhone 13 Resolution
+    const REAL_WIDTH = 390;
+    const REAL_HEIGHT = 844;
+
+    // ===================== State =====================
+    let sessionId = null;
+    let ws = null;
+    let streaming = false;
+
+    // FPS tracking
+    let frameCount = 0;
+    let lastFpsTime = performance.now();
+
+    // DOM elements
+    const canvas = document.getElementById('screen');
+    const ctx = canvas.getContext('2d');
+    const overlay = document.getElementById('overlay');
+    const statusDot = document.getElementById('statusDot');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const fpsDisplay = document.getElementById('fps');
+    const platformSelect = document.getElementById('platformSelect');
+
+
+    // ===================== Session Management =====================
+
+    async function startSession() {
+      setStatus('connecting');
+      startBtn.disabled = true;
+      platformSelect.disabled = true;
+
+      try {
+        const platform = platformSelect.value;
+
+        // 1. Create session via REST
+        const baseUrl = SERVER_URL || window.location.origin;
+        const response = await fetch(baseUrl + "/start-session", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "ngrok-skip-browser-warning": "69420" // Bypass ngrok's free tier warning page
+          },
+          body: JSON.stringify({ platform: platform })
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+        }
+
+        const data = await response.json();
+        sessionId = data.sessionId;
+        console.log("Session created:", sessionId);
+
+        // 2. Connect WebSocket
+        const wsProtocol = baseUrl.startsWith('https') ? 'wss' : 'ws';
+        const wsHost = baseUrl.replace(/^https?:\/\//, '');
+        ws = new WebSocket(`${wsProtocol}://${wsHost}`);
+        ws.binaryType = 'arraybuffer';
+
+        ws.onopen = () => {
+          console.log("WebSocket connected");
+
+          // 3. Request stream start
+          ws.send(JSON.stringify({
+            sessionId: sessionId,
+            type: "start-stream"
+          }));
+        };
+
+        ws.onmessage = (event) => {
+          if (event.data instanceof ArrayBuffer) {
+            renderFrame(event.data);
+            return;
+          }
+
+          try {
+            const msg = JSON.parse(event.data);
+            handleControlMessage(msg);
+          } catch (err) {
+            console.warn("Unparseable message:", event.data);
+          }
+        };
+
+        ws.onclose = () => {
+          console.log("WebSocket disconnected");
+          setStatus('disconnected');
+          cleanupSession();
+        };
+
+        ws.onerror = (err) => {
+          console.error("WebSocket error:", err);
+          setStatus('disconnected');
+          cleanupSession();
+        };
+
+      } catch (err) {
+        console.error("Failed to start session:", err);
+        setStatus('disconnected');
+        cleanupSession();
+        alert("Failed to start session: " + err.message);
+      }
+    }
+
+    function cleanupSession() {
+      streaming = false;
+      startBtn.disabled = false;
+      platformSelect.disabled = false;
+      stopBtn.disabled = true;
+    }
+
+    function stopSession() {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          sessionId: sessionId,
+          type: "stop-stream"
+        }));
+        ws.close();
+      }
+      overlay.classList.remove('hidden');
+      overlay.textContent = 'Session ended';
+      cleanupSession();
+    }
+
+    // ===================== Frame Rendering =====================
+
+    function renderFrame(arrayBuffer) {
+      const blob = new Blob([arrayBuffer], { type: 'image/jpeg' });
+      createImageBitmap(blob).then(bitmap => {
+        // Draw to full canvas resolution
+        ctx.drawImage(bitmap, 0, 0, REAL_WIDTH, REAL_HEIGHT);
+        bitmap.close();
+      }).catch(err => {
+        console.warn("Frame decode error:", err);
+      });
+
+      // FPS counter
+      frameCount++;
+      const now = performance.now();
+      if (now - lastFpsTime >= 1000) {
+        fpsDisplay.textContent = frameCount + ' fps';
+        frameCount = 0;
+        lastFpsTime = now;
+      }
+    }
+
+    function handleControlMessage(msg) {
+      switch (msg.type) {
+        case 'stream-started':
+          console.log("Stream started:", msg);
+          setStatus('connected');
+          streaming = true;
+          overlay.classList.add('hidden');
+          stopBtn.disabled = false;
+          break;
+        case 'stream-stopped':
+          console.log("Stream stopped");
+          streaming = false;
+          break;
+        case 'error':
+          console.error("Server error:", msg.message);
+          alert("Server error: " + msg.message);
+          break;
+      }
+    }
+
+    // ===================== Input Handling =====================
+
+    function sendInput(data) {
+      if (ws && ws.readyState === WebSocket.OPEN && sessionId) {
+        ws.send(JSON.stringify({ sessionId, ...data }));
+      }
+    }
+
+    // --- Click ---
+    canvas.addEventListener("click", function (e) {
+      if (!streaming) return;
+
+      // Get click position relative to the canvas element
+      const rect = canvas.getBoundingClientRect();
+
+      // Scale factor: internal resolution / display size
+      const scaleX = REAL_WIDTH / rect.width;
+      const scaleY = REAL_HEIGHT / rect.height;
+
+      const x = (e.clientX - rect.left) * scaleX;
+      const y = (e.clientY - rect.top) * scaleY;
+
+      sendInput({ type: "click", x: Math.round(x), y: Math.round(y) });
+    });
+
+    // --- Scroll ---
+    canvas.addEventListener("wheel", function (e) {
+      e.preventDefault();
+      if (!streaming) return;
+      sendInput({ type: "scroll", deltaX: e.deltaX, deltaY: e.deltaY });
+    }, { passive: false });
+
+    // --- Keyboard ---
+    document.addEventListener('keydown', function (e) {
+      if (document.activeElement === document.getElementById('textInput') || !streaming) return;
+
+      const key = e.key;
+      if (key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        sendInput({ type: "keypress", key: key });
+      } else {
+        sendInput({ type: "keydown", key: key });
+      }
+    });
+
+    document.addEventListener('keyup', function (e) {
+      if (document.activeElement === document.getElementById('textInput') || !streaming) return;
+
+      // Only send keyup for modifiers/special keys to reduce traffic
+      if (e.key.length > 1) {
+        sendInput({ type: "keyup", key: e.key });
+      }
+    });
+
+    function sendText() {
+      const input = document.getElementById('textInput');
+      const text = input.value;
+      if (!text) return;
+
+      sendInput({ type: "type", text: text });
+      input.value = '';
+    }
+
+    // ===================== Status =====================
+
+    function setStatus(state) {
+      statusDot.className = 'status-dot ' + state;
+    }
+
+  </script>
+</body>
+
+</html>
