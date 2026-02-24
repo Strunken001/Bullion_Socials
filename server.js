@@ -158,7 +158,7 @@ wss.on('connection', (ws, req) => {
         const streamOptions = {
              maxWidth: 390,   // Shrink max width to exact mobile bounds, lowering bandwidth
              maxHeight: 844,  // Shrink max height to exact mobile bounds
-             quality: 20,     // High JPEG compression reduces image payload size drastically
+             quality: 70,     // High JPEG compression reduces image payload size drastically
              everyNthFrame: 1 // Must be 1 to prevent dropping the single initial frame of a static page
         };
 
