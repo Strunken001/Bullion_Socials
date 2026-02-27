@@ -4,9 +4,9 @@
  */
 
 const DEFAULT_OPTIONS = {
-  format: 'jpeg',
-  quality: 50, // Reduced from 80 for better performance under load
-  everyNthFrame: 1
+  format: "jpeg",
+  quality: 100, // Reduced from 80 for better performance under load
+  everyNthFrame: 1,
 };
 
 /**
@@ -20,22 +20,27 @@ const DEFAULT_OPTIONS = {
 async function startScreencast(page, onFrame, options = {}) {
   const cdpSession = await page.context().newCDPSession(page);
 
-  cdpSession.on('Page.screencastFrame', async (params) => {
+  cdpSession.on("Page.screencastFrame", async (params) => {
     try {
       // Acknowledge the frame so Chrome sends the next one
-      await cdpSession.send('Page.screencastFrameAck', {
-        sessionId: params.sessionId
+      await cdpSession.send("Page.screencastFrameAck", {
+        sessionId: params.sessionId,
       });
 
       // Convert base64 frame data to Buffer
-      const frameBuffer = Buffer.from(params.data, 'base64');
-      console.log(`[CDP] Received frame from Chrome, size: ${frameBuffer.length}`); // optional, could be noisy
+      const frameBuffer = Buffer.from(params.data, "base64");
+      console.log(
+        `[CDP] Received frame from Chrome, size: ${frameBuffer.length}`,
+      ); // optional, could be noisy
 
       onFrame(frameBuffer, params.metadata);
     } catch (err) {
       // Session may have been closed
-      if (!err.message.includes('Target closed') && !err.message.includes('Session closed')) {
-        console.error('Screencast frame error:', err.message);
+      if (
+        !err.message.includes("Target closed") &&
+        !err.message.includes("Session closed")
+      ) {
+        console.error("Screencast frame error:", err.message);
       }
     }
   });
@@ -46,23 +51,25 @@ async function startScreencast(page, onFrame, options = {}) {
     ...DEFAULT_OPTIONS,
     maxWidth: options.maxWidth || 2048,
     maxHeight: options.maxHeight || 4096,
-    ...options
+    ...options,
   };
 
-  await cdpSession.send('Page.startScreencast', screencastOptions);
+  await cdpSession.send("Page.startScreencast", screencastOptions);
 
-  console.log('CDP screencast started with options:', screencastOptions);
-  
+  console.log("CDP screencast started with options:", screencastOptions);
+
   // Force a repaint to ensure we get an initial frame
-  await page.evaluate(() => {
-    const el = document.createElement('div');
-    el.style.position = 'absolute';
-    el.style.top = '0';
-    el.style.width = '1px';
-    el.style.height = '1px';
-    document.body.appendChild(el);
-    setTimeout(() => el.remove(), 100);
-  }).catch(() => {});
+  await page
+    .evaluate(() => {
+      const el = document.createElement("div");
+      el.style.position = "absolute";
+      el.style.top = "0";
+      el.style.width = "1px";
+      el.style.height = "1px";
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), 100);
+    })
+    .catch(() => {});
 
   return cdpSession;
 }
@@ -73,12 +80,12 @@ async function startScreencast(page, onFrame, options = {}) {
  */
 async function stopScreencast(cdpSession) {
   try {
-    await cdpSession.send('Page.stopScreencast');
+    await cdpSession.send("Page.stopScreencast");
     await cdpSession.detach();
-    console.log('CDP screencast stopped');
+    console.log("CDP screencast stopped");
   } catch (err) {
     // Ignore errors if session is already closed
-    console.warn('Screencast stop warning:', err.message);
+    console.warn("Screencast stop warning:", err.message);
   }
 }
 

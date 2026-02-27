@@ -1,29 +1,34 @@
-const express = require('express');
-const { WebSocketServer } = require('ws');
-const path = require('path');
-const { initBrowser, getBrowser } = require('./browserManager');
-const { devices } = require('playwright');
-const { createSession, getSession, updateSession, deleteSession, cleanupIdleSessions } = require('./sessionStore');
-const { startScreencast, stopScreencast } = require('./streamManager');
-const { handleInput } = require('./inputHandler');
-const { v4: uuidv4 } = require('uuid');
-const cors = require('cors');
-
+const express = require("express");
+const { WebSocketServer } = require("ws");
+const path = require("path");
+const { initBrowser, getBrowser } = require("./browserManager");
+const { devices } = require("playwright");
+const {
+  createSession,
+  getSession,
+  updateSession,
+  deleteSession,
+  cleanupIdleSessions,
+} = require("./sessionStore");
+const { startScreencast, stopScreencast } = require("./streamManager");
+const { handleInput } = require("./inputHandler");
+const { v4: uuidv4 } = require("uuid");
+const cors = require("cors");
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 // Serve the client HTML
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'client.html'));
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "client.html"));
 });
 
 (async () => {
   await initBrowser();
 })();
 
-app.post('/start-session', async (req, res) => {
+app.post("/start-session", async (req, res) => {
   let context, page;
   try {
     const { platform } = req.body;
@@ -31,11 +36,11 @@ app.post('/start-session', async (req, res) => {
     console.log(`[API] /start-session requested for platform: ${platform}`);
 
     const allowed = {
-      facebook: 'https://www.facebook.com/',
-      instagram: 'https://www.instagram.com',
-      x: 'https://x.com/',
-      tiktok: 'https://www.tiktok.com',
-      linkedin: 'https://www.linkedin.com'
+      facebook: "https://www.facebook.com/",
+      instagram: "https://www.instagram.com",
+      x: "https://x.com/",
+      tiktok: "https://www.tiktok.com",
+      linkedin: "https://www.linkedin.com",
     };
 
     if (!allowed[platform]) {
@@ -43,41 +48,52 @@ app.post('/start-session', async (req, res) => {
     }
 
     const browser = getBrowser();
-    
+
     // Use iPhone 13 for mobile emulation
-    const device = devices['iPhone 13'];
+    const device = devices["iPhone 13"];
     context = await browser.newContext({
       ...device,
       viewport: { width: 390, height: 844 },
-      locale: 'en-US',                         // Force locale to US English
+      locale: "en-US", // Force locale to US English
       extraHTTPHeaders: {
-        'Accept-Language': 'en-US,en;q=0.9'   // Tell websites to respond in English
-      }
+        "Accept-Language": "en-US,en;q=0.9", // Tell websites to respond in English
+      },
     });
 
     page = await context.newPage();
 
     // Set a timeout for navigation to prevent hanging
-    await page.goto(allowed[platform], { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.goto(allowed[platform], {
+      waitUntil: "domcontentloaded",
+      timeout: 30000,
+    });
 
     // Inject CSS to slightly brighten the page and increase contrast, making dull sites "pop" on mobile streams
-    await page.addStyleTag({ content: 'html { filter: brightness(1.1) contrast(1.05) saturate(1.1) !important; }' }).catch(() => {});
+    await page
+      .addStyleTag({
+        content:
+          "html { filter: brightness(1.1) contrast(1.05) saturate(1.1) !important; }",
+      })
+      .catch(() => {});
 
     const sessionId = uuidv4();
     createSession(sessionId, context, page);
 
     res.json({ sessionId });
-    console.log(`[API] Session created successfully. Sent sessionId: ${sessionId} back to client.`);
-
+    console.log(
+      `[API] Session created successfully. Sent sessionId: ${sessionId} back to client.`,
+    );
   } catch (error) {
     console.error(`[API] Error starting session:`, error.message);
     if (page) await page.close().catch(() => {});
     if (context) await context.close().catch(() => {});
-    res.status(500).json({ error: "Failed to start session", details: error.message });
+    res
+      .status(500)
+      .json({ error: "Failed to start session", details: error.message });
   }
 });
 
-app.post('/end-session', async (req, res) => {
+app.post("/end-session", async (req, res) => {
   try {
     const { sessionId } = req.body;
     console.log(`\n--- New Flow: End Session ---`);
@@ -86,15 +102,26 @@ app.post('/end-session', async (req, res) => {
 
     if (session) {
       if (session.ws && session.ws.readyState === session.ws.OPEN) {
-        session.ws.send(JSON.stringify({ type: 'session-ended', message: 'Session time exhausted' }));
+        session.ws.send(
+          JSON.stringify({
+            type: "session-ended",
+            message: "Session time exhausted",
+          }),
+        );
       }
-      
-      // Give a small delay for message to send before closing everything? 
+
+      // Give a small delay for message to send before closing everything?
       // User said "after some seconds close that instance of the browser used"
       // But for simplicity/robustness, we can just close resources. The message should go through.
-      
-      if (session.page) await session.page.close().catch(e => console.error("Error closing page:", e));
-      if (session.context) await session.context.close().catch(e => console.error("Error closing context:", e));
+
+      if (session.page)
+        await session.page
+          .close()
+          .catch((e) => console.error("Error closing page:", e));
+      if (session.context)
+        await session.context
+          .close()
+          .catch((e) => console.error("Error closing context:", e));
       deleteSession(sessionId);
     }
 
@@ -107,7 +134,7 @@ app.post('/end-session', async (req, res) => {
 
 const server = app.listen(3000, () => {
   console.log("Server running on http://localhost:3000");
-  
+
   // Cleanup idle sessions every minute
   // Max idle time: 5 minutes (300,000 ms)
   setInterval(async () => {
@@ -121,12 +148,12 @@ const server = app.listen(3000, () => {
 
 const wss = new WebSocketServer({ server });
 
-wss.on('connection', (ws, req) => {
+wss.on("connection", (ws, req) => {
   const ip = req.socket.remoteAddress;
   console.log(`\n--- New Flow: WebSocket Connection ---`);
   console.log(`[WebSocket] Client connected from ${ip}`);
 
-  ws.on('message', async (message) => {
+  ws.on("message", async (message) => {
     // Check if it's binary (shouldn't be from client, but handle gracefully)
     if (Buffer.isBuffer(message) && message[0] !== 0x7b) {
       return;
@@ -135,20 +162,23 @@ wss.on('connection', (ws, req) => {
     let data;
     try {
       data = JSON.parse(message.toString());
-      console.log(`[WebSocket] Received message from client (type: ${data.type}):`, data);
+      console.log(
+        `[WebSocket] Received message from client (type: ${data.type}):`,
+        data,
+      );
     } catch (err) {
-      console.error('Invalid JSON message:', err.message);
+      console.error("Invalid JSON message:", err.message);
       return;
     }
 
     const session = getSession(data.sessionId);
     if (!session) {
-      ws.send(JSON.stringify({ type: 'error', message: 'Invalid session' }));
+      ws.send(JSON.stringify({ type: "error", message: "Invalid session" }));
       return;
     }
 
     // --- Stream Control ---
-    if (data.type === 'start-stream') {
+    if (data.type === "start-stream") {
       // Store the WebSocket reference in the session
       updateSession(data.sessionId, { ws });
 
@@ -157,51 +187,63 @@ wss.on('connection', (ws, req) => {
         // Since we set viewport in newContext, we should use that.
         // For now, we know it's mobile (390x844) based on our implementation, but let's be robust.
         // We'll pass the resolution that matches the desired output.
-        
+
         // Aggressive data usage reduction for mobile (reduced overhead without altering input/output structure)
         const streamOptions = {
-             maxWidth: 390,   // Shrink max width to exact mobile bounds, lowering bandwidth
-             maxHeight: 844,  // Shrink max height to exact mobile bounds
-             quality: 70,     // High JPEG compression reduces image payload size drastically
-             everyNthFrame: 1 // Must be 1 to prevent dropping the single initial frame of a static page
+          maxWidth: 390, // Shrink max width to exact mobile bounds, lowering bandwidth
+          maxHeight: 844, // Shrink max height to exact mobile bounds
+          quality: 100, // High JPEG compression reduces image payload size drastically
+          everyNthFrame: 1, // Must be 1 to prevent dropping the single initial frame of a static page
         };
 
-        const cdpSession = await startScreencast(session.page, (frameBuffer, metadata) => {
-          // Send frame as binary WebSocket message
-          console.log(`[WebSocket] Checking connection before send - ws.readyState: ${ws.readyState}, ws.OPEN: ${ws.OPEN}, typeof ws.send: ${typeof ws.send}`);
-          if (ws.readyState === 1) { // 1 is WebSocket.OPEN
-            ws.send(frameBuffer, { binary: true });
-            console.log(`[WebSocket] Rendered view (frame) sent back to client. Size: ${frameBuffer.length} bytes`);
-          }
-        }, streamOptions);
+        const cdpSession = await startScreencast(
+          session.page,
+          (frameBuffer, metadata) => {
+            // Send frame as binary WebSocket message
+            console.log(
+              `[WebSocket] Checking connection before send - ws.readyState: ${ws.readyState}, ws.OPEN: ${ws.OPEN}, typeof ws.send: ${typeof ws.send}`,
+            );
+            if (ws.readyState === 1) {
+              // 1 is WebSocket.OPEN
+              ws.send(frameBuffer, { binary: true });
+              console.log(
+                `[WebSocket] Rendered view (frame) sent back to client. Size: ${frameBuffer.length} bytes`,
+              );
+            }
+          },
+          streamOptions,
+        );
 
         updateSession(data.sessionId, { cdpSession });
 
-        ws.send(JSON.stringify({
-          type: 'stream-started',
-          width: 390,
-          height: 844
-        }));
+        ws.send(
+          JSON.stringify({
+            type: "stream-started",
+            width: 390,
+            height: 844,
+          }),
+        );
 
         console.log(`Screencast started for session ${data.sessionId}`);
-
       } catch (err) {
-        console.error('Failed to start screencast:', err);
-        ws.send(JSON.stringify({ type: 'error', message: 'Failed to start stream' }));
+        console.error("Failed to start screencast:", err);
+        ws.send(
+          JSON.stringify({ type: "error", message: "Failed to start stream" }),
+        );
       }
       return;
     }
 
-    if (data.type === 'stop-stream') {
+    if (data.type === "stop-stream") {
       if (session.cdpSession) {
         await stopScreencast(session.cdpSession);
         updateSession(data.sessionId, { cdpSession: null });
       }
-      ws.send(JSON.stringify({ type: 'stream-stopped' }));
+      ws.send(JSON.stringify({ type: "stream-stopped" }));
       return;
     }
 
-    if (data.type === 'ping') {
+    if (data.type === "ping") {
       // Just respond to keep connection alive, or do nothing.
       // We don't need to log this every 10s as it clutters the terminal.
       return;
@@ -212,13 +254,15 @@ wss.on('connection', (ws, req) => {
     await handleInput(session.page, data);
   });
 
-  ws.on('close', async () => {
-    console.log(`WebSocket client disconnected for session: ${data ? data.sessionId : 'unknown'}`);
+  ws.on("close", async () => {
+    console.log(
+      `WebSocket client disconnected for session: ${data ? data.sessionId : "unknown"}`,
+    );
     // If we wanted to clean up immediately on disconnect, we could call deleteSession here.
     // For now, we rely on the idle timeout (cleanupIdleSessions) to allow for re-connection.
   });
 
-  ws.on('error', (err) => {
-    console.error('WebSocket error:', err.message);
+  ws.on("error", (err) => {
+    console.error("WebSocket error:", err.message);
   });
 });
