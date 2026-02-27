@@ -84,12 +84,12 @@ app.post("/start-session", async (req, res) => {
       height: MOBILE_HEIGHT,
     });
 
-    res.json({ 
-      sessionId, 
-      width: MOBILE_WIDTH, 
+    res.json({
+      sessionId,
+      width: MOBILE_WIDTH,
       height: MOBILE_HEIGHT,
       quality: 95,
-      format: "jpeg"
+      format: "jpeg",
     });
     console.log(
       `[API] Session created: ${sessionId} | Viewport: ${MOBILE_WIDTH}x${MOBILE_HEIGHT} | Quality: 95 (high fidelity)`,
