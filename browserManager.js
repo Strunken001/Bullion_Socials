@@ -13,7 +13,8 @@ async function initBrowser() {
       '--disable-renderer-backgrounding',
       '--disable-dev-shm-usage', // Extremely important to prevent out-of-memory crashes when multiple users connect
       '--disable-gpu',           // Helps reduce memory consumption for headless loads
-      '--no-zygote'
+      '--no-zygote',
+      '--lang=en-US'        // Force browser UI language to English
     ]
   });
 

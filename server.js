@@ -48,7 +48,11 @@ app.post('/start-session', async (req, res) => {
     const device = devices['iPhone 13'];
     context = await browser.newContext({
       ...device,
-      viewport: { width: 390, height: 844 }
+      viewport: { width: 390, height: 844 },
+      locale: 'en-US',                         // Force locale to US English
+      extraHTTPHeaders: {
+        'Accept-Language': 'en-US,en;q=0.9'   // Tell websites to respond in English
+      }
     });
 
     page = await context.newPage();
