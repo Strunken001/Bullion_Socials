@@ -5,7 +5,7 @@
 
 const DEFAULT_OPTIONS = {
   format: "jpeg",
-  quality: 100, // Reduced from 80 for better performance under load
+  quality: 85, // Optimized for high-resolution streaming (1080x1920)
   everyNthFrame: 1,
 };
 

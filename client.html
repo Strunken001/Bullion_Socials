@@ -219,15 +219,14 @@
 <body>
 
   <div class="header">
-    <h1>📱 Remote Mobile</h1>
+    <h1>📱 Remote Browser - Auto Responsive</h1>
     <div class="controls">
       <select id="platformSelect">
         <option value="facebook">Facebook</option>
         <option value="instagram">Instagram</option>
-        <option value="twitter">Twitter / X</option>
+        <option value="x">Twitter / X</option>
         <option value="tiktok">TikTok</option>
         <option value="linkedin">LinkedIn</option>
-        <option value="snapchat">Snapchat</option>
       </select>
       <div class="status">
         <div class="status-dot" id="statusDot"></div>
@@ -237,15 +236,15 @@
     </div>
   </div>
 
-  <div class="mobile-frame" style="width: 345px; height: 700px;">
+  <div class="mobile-frame" id="mobileFrame">
     <div class="canvas-container">
-      <canvas id="screen" width="390" height="844"></canvas>
+      <canvas id="screen"></canvas>
       <div class="overlay" id="overlay">Select a platform and click Start</div>
     </div>
   </div>
 
   <div class="info-bar">
-    <span id="resolution">390 × 844 (iPhone 13)</span>
+    <span id="resolution">Auto</span>
     <span id="fps">0 fps</span>
   </div>
 
@@ -258,10 +257,21 @@
   <script>
     // ===================== Configuration =====================
     const SERVER_URL = "https://felix-orthomorphic-manageably.ngrok-free.dev";
+    
+    // Server renders at this universal resolution
+    const SERVER_WIDTH = 1080;
+    const SERVER_HEIGHT = 1920;
 
-    // iPhone 13 Resolution
-    const REAL_WIDTH = 390;
-    const REAL_HEIGHT = 844;
+    // ===================== Client-Side Responsive Configuration =====================
+    // The client automatically detects its own viewport and scales appropriately
+    // No device selection needed - works on any screen size!
+    
+    let DISPLAY_WIDTH = window.innerWidth;
+    let DISPLAY_HEIGHT = window.innerHeight;
+    
+    // Calculate max canvas size based on container
+    const MAX_CANVAS_WIDTH = Math.min(DISPLAY_WIDTH - 40, 800); // 40px margin
+    const MAX_CANVAS_HEIGHT = Math.min(DISPLAY_HEIGHT - 200, 1200); // 200px for UI
 
     // ===================== State =====================
     let sessionId = null;
@@ -281,7 +291,55 @@
     const stopBtn = document.getElementById('stopBtn');
     const fpsDisplay = document.getElementById('fps');
     const platformSelect = document.getElementById('platformSelect');
+    const resolutionDisplay = document.getElementById('resolution');
+    const mobileFrame = document.getElementById('mobileFrame');
 
+    // ===================== Responsive Canvas Setup =====================
+
+    function setupResponsiveCanvas() {
+      // Calculate canvas size maintaining aspect ratio
+      const serverAspectRatio = SERVER_WIDTH / SERVER_HEIGHT;
+      
+      let canvasWidth, canvasHeight;
+      
+      // Calculate based on max width or height constraint
+      if (MAX_CANVAS_WIDTH / MAX_CANVAS_HEIGHT > serverAspectRatio) {
+        // Height is constraining factor
+        canvasHeight = MAX_CANVAS_HEIGHT;
+        canvasWidth = canvasHeight * serverAspectRatio;
+      } else {
+        // Width is constraining factor
+        canvasWidth = MAX_CANVAS_WIDTH;
+        canvasHeight = canvasWidth / serverAspectRatio;
+      }
+
+      // Set canvas internal resolution (always server resolution for quality)
+      canvas.width = SERVER_WIDTH;
+      canvas.height = SERVER_HEIGHT;
+
+      // Set canvas display size (responsive to screen)
+      canvas.style.width = canvasWidth + 'px';
+      canvas.style.height = canvasHeight + 'px';
+
+      // Update frame container
+      mobileFrame.style.width = canvasWidth + 'px';
+      mobileFrame.style.height = canvasHeight + 'px';
+
+      // Update display info
+      resolutionDisplay.textContent = `${SERVER_WIDTH} × ${SERVER_HEIGHT} (Responsive)`;
+
+      console.log(`Canvas: Internal ${SERVER_WIDTH}×${SERVER_HEIGHT}, Display ${canvasWidth.toFixed(0)}×${canvasHeight.toFixed(0)}`);
+    }
+
+    // Setup on load
+    setupResponsiveCanvas();
+
+    // Recalculate on window resize
+    window.addEventListener('resize', () => {
+      DISPLAY_WIDTH = window.innerWidth;
+      DISPLAY_HEIGHT = window.innerHeight;
+      setupResponsiveCanvas();
+    });
 
     // ===================== Session Management =====================
 
@@ -293,13 +351,13 @@
       try {
         const platform = platformSelect.value;
 
-        // 1. Create session via REST
+        // 1. Create session via REST (no device info needed!)
         const baseUrl = SERVER_URL || window.location.origin;
         const response = await fetch(baseUrl + "/start-session", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "ngrok-skip-browser-warning": "69420" // Bypass ngrok's free tier warning page
+            "ngrok-skip-browser-warning": "69420"
           },
           body: JSON.stringify({ platform: platform })
         });
@@ -310,6 +368,7 @@
 
         const data = await response.json();
         sessionId = data.sessionId;
+        
         console.log("Session created:", sessionId);
 
         // 2. Connect WebSocket
@@ -347,6 +406,151 @@
           setStatus('disconnected');
           cleanupSession();
         };
+
+        ws.onerror = (err) => {
+          console.error("WebSocket error:", err);
+          setStatus('disconnected');
+          cleanupSession();
+        };
+
+      } catch (err) {
+        console.error("Failed to start session:", err);
+        setStatus('disconnected');
+        cleanupSession();
+        alert("Failed to start session: " + err.message);
+      }
+    }
+
+    function cleanupSession() {
+      streaming = false;
+      startBtn.disabled = false;
+      platformSelect.disabled = false;
+      stopBtn.disabled = true;
+    }
+
+    function stopSession() {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          sessionId: sessionId,
+          type: "stop-stream"
+        }));
+        ws.close();
+      }
+      overlay.classList.remove('hidden');
+      overlay.textContent = 'Session ended';
+      cleanupSession();
+    }
+
+    // ===================== Frame Rendering =====================
+
+    function renderFrame(arrayBuffer) {
+      const blob = new Blob([arrayBuffer], { type: 'image/jpeg' });
+      createImageBitmap(blob).then(bitmap => {
+        // Draw to full server resolution (quality preserved)
+        ctx.drawImage(bitmap, 0, 0, SERVER_WIDTH, SERVER_HEIGHT);
+        bitmap.close();
+      }).catch(err => {
+        console.warn("Frame decode error:", err);
+      });
+
+      // FPS counter
+      frameCount++;
+      const now = performance.now();
+      if (now - lastFpsTime >= 1000) {
+        fpsDisplay.textContent = frameCount + ' fps';
+        frameCount = 0;
+        lastFpsTime = now;
+      }
+    }
+
+    function handleControlMessage(msg) {
+      switch (msg.type) {
+        case 'stream-started':
+          console.log("Stream started at", msg.width + "x" + msg.height);
+          setStatus('connected');
+          streaming = true;
+          overlay.classList.add('hidden');
+          stopBtn.disabled = false;
+          break;
+        case 'stream-stopped':
+          console.log("Stream stopped");
+          streaming = false;
+          break;
+        case 'error':
+          console.error("Server error:", msg.message);
+          alert("Server error: " + msg.message);
+          break;
+      }
+    }
+
+    // ===================== Input Handling =====================
+
+    function sendInput(data) {
+      if (ws && ws.readyState === WebSocket.OPEN && sessionId) {
+        ws.send(JSON.stringify({ sessionId, ...data }));
+      }
+    }
+
+    // --- Click ---
+    canvas.addEventListener("click", function (e) {
+      if (!streaming) return;
+
+      // Get click position relative to canvas
+      const rect = canvas.getBoundingClientRect();
+
+      // Scale from display coordinates to server coordinates
+      const scaleX = SERVER_WIDTH / rect.width;
+      const scaleY = SERVER_HEIGHT / rect.height;
+
+      const x = (e.clientX - rect.left) * scaleX;
+      const y = (e.clientY - rect.top) * scaleY;
+
+      sendInput({ type: "click", x: Math.round(x), y: Math.round(y) });
+    });
+
+    // --- Scroll ---
+    canvas.addEventListener("wheel", function (e) {
+      e.preventDefault();
+      if (!streaming) return;
+      sendInput({ type: "scroll", deltaX: e.deltaX, deltaY: e.deltaY });
+    }, { passive: false });
+
+    // --- Keyboard ---
+    document.addEventListener('keydown', function (e) {
+      if (document.activeElement === document.getElementById('textInput') || !streaming) return;
+
+      const key = e.key;
+      if (key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        sendInput({ type: "keypress", key: key });
+      } else {
+        sendInput({ type: "keydown", key: key });
+      }
+    });
+
+    document.addEventListener('keyup', function (e) {
+      if (document.activeElement === document.getElementById('textInput') || !streaming) return;
+
+      if (e.key.length > 1) {
+        sendInput({ type: "keyup", key: e.key });
+      }
+    });
+
+    function sendText() {
+      const input = document.getElementById('textInput');
+      const text = input.value;
+      if (!text) return;
+
+      sendInput({ type: "type", text: text });
+      input.value = '';
+    }
+
+    // ===================== Status =====================
+
+    function setStatus(state) {
+      statusDot.className = 'status-dot ' + state;
+    }
+
+  </script>
 
         ws.onerror = (err) => {
           console.error("WebSocket error:", err);

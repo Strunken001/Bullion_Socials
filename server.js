@@ -49,14 +49,17 @@ app.post("/start-session", async (req, res) => {
 
     const browser = getBrowser();
 
-    // Use iPhone 13 for mobile emulation
-    const device = devices["iPhone 13"];
+    // Universal high-resolution viewport for responsive rendering
+    // This resolution works well across all device types
+    const UNIVERSAL_WIDTH = 1080;
+    const UNIVERSAL_HEIGHT = 1920;
+
     context = await browser.newContext({
-      ...device,
-      viewport: { width: 390, height: 844 },
-      locale: "en-US", // Force locale to US English
+      viewport: { width: UNIVERSAL_WIDTH, height: UNIVERSAL_HEIGHT },
+      deviceScaleFactor: 1,
+      locale: "en-US",
       extraHTTPHeaders: {
-        "Accept-Language": "en-US,en;q=0.9", // Tell websites to respond in English
+        "Accept-Language": "en-US,en;q=0.9",
       },
     });
 
@@ -77,11 +80,11 @@ app.post("/start-session", async (req, res) => {
       .catch(() => {});
 
     const sessionId = uuidv4();
-    createSession(sessionId, context, page);
+    createSession(sessionId, context, page, { width: UNIVERSAL_WIDTH, height: UNIVERSAL_HEIGHT });
 
-    res.json({ sessionId });
+    res.json({ sessionId, width: UNIVERSAL_WIDTH, height: UNIVERSAL_HEIGHT });
     console.log(
-      `[API] Session created successfully. Sent sessionId: ${sessionId} back to client.`,
+      `[API] Session created successfully. Sent sessionId: ${sessionId} with universal viewport ${UNIVERSAL_WIDTH}x${UNIVERSAL_HEIGHT} (client handles responsiveness)`,
     );
   } catch (error) {
     console.error(`[API] Error starting session:`, error.message);
@@ -188,12 +191,13 @@ wss.on("connection", (ws, req) => {
         // For now, we know it's mobile (390x844) based on our implementation, but let's be robust.
         // We'll pass the resolution that matches the desired output.
 
-        // Aggressive data usage reduction for mobile (reduced overhead without altering input/output structure)
+        // Dynamic streaming options based on universal viewport
+        // High resolution server-side rendering for maximum client-side flexibility
         const streamOptions = {
-          maxWidth: 390, // Shrink max width to exact mobile bounds, lowering bandwidth
-          maxHeight: 844, // Shrink max height to exact mobile bounds
-          quality: 100, // High JPEG compression reduces image payload size drastically
-          everyNthFrame: 1, // Must be 1 to prevent dropping the single initial frame of a static page
+          maxWidth: 1080,
+          maxHeight: 1920,
+          quality: 85, // Slightly reduced for high-res streaming efficiency
+          everyNthFrame: 1,
         };
 
         const cdpSession = await startScreencast(
@@ -219,8 +223,8 @@ wss.on("connection", (ws, req) => {
         ws.send(
           JSON.stringify({
             type: "stream-started",
-            width: 390,
-            height: 844,
+            width: session.viewport?.width || 1080,
+            height: session.viewport?.height || 1920,
           }),
         );
 

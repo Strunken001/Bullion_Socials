@@ -1,9 +1,10 @@
 const sessions = new Map();
 
-function createSession(id, context, page) {
+function createSession(id, context, page, viewport = {}) {
   sessions.set(id, { 
     context, 
     page, 
+    viewport: { width: viewport.width || 1080, height: viewport.height || 1920 },
     cdpSession: null, 
     ws: null,
     lastActivity: Date.now()
