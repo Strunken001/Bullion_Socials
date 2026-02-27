@@ -5,8 +5,8 @@ function createSession(id, context, page, viewport = {}) {
     context,
     page,
     viewport: {
-      width: viewport.width || 1080,
-      height: viewport.height || 1920,
+      width: viewport.width || 390,
+      height: viewport.height || 844,
     },
     cdpSession: null,
     ws: null,

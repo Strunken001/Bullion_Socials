@@ -49,13 +49,12 @@ app.post("/start-session", async (req, res) => {
 
     const browser = getBrowser();
 
-    // Universal high-resolution viewport for responsive rendering
-    // This resolution works well across all device types
-    const UNIVERSAL_WIDTH = 1080;
-    const UNIVERSAL_HEIGHT = 1920;
+    // Mobile-optimized viewport (iPhone 13 standard)
+    const MOBILE_WIDTH = 390;
+    const MOBILE_HEIGHT = 844;
 
     context = await browser.newContext({
-      viewport: { width: UNIVERSAL_WIDTH, height: UNIVERSAL_HEIGHT },
+      viewport: { width: MOBILE_WIDTH, height: MOBILE_HEIGHT },
       deviceScaleFactor: 1,
       locale: "en-US",
       extraHTTPHeaders: {
@@ -81,13 +80,19 @@ app.post("/start-session", async (req, res) => {
 
     const sessionId = uuidv4();
     createSession(sessionId, context, page, {
-      width: UNIVERSAL_WIDTH,
-      height: UNIVERSAL_HEIGHT,
+      width: MOBILE_WIDTH,
+      height: MOBILE_HEIGHT,
     });
 
-    res.json({ sessionId, width: UNIVERSAL_WIDTH, height: UNIVERSAL_HEIGHT });
+    res.json({ 
+      sessionId, 
+      width: MOBILE_WIDTH, 
+      height: MOBILE_HEIGHT,
+      quality: 95,
+      format: "jpeg"
+    });
     console.log(
-      `[API] Session created successfully. Sent sessionId: ${sessionId} with universal viewport ${UNIVERSAL_WIDTH}x${UNIVERSAL_HEIGHT} (client handles responsiveness)`,
+      `[API] Session created: ${sessionId} | Viewport: ${MOBILE_WIDTH}x${MOBILE_HEIGHT} | Quality: 95 (high fidelity)`,
     );
   } catch (error) {
     console.error(`[API] Error starting session:`, error.message);
@@ -194,12 +199,12 @@ wss.on("connection", (ws, req) => {
         // For now, we know it's mobile (390x844) based on our implementation, but let's be robust.
         // We'll pass the resolution that matches the desired output.
 
-        // Dynamic streaming options based on universal viewport
-        // High resolution server-side rendering for maximum client-side flexibility
+        // Mobile-optimized streaming options
+        // 390x844 is the average/standard mobile viewport (iPhone 13 standard)
         const streamOptions = {
-          maxWidth: 1080,
-          maxHeight: 1920,
-          quality: 85, // Slightly reduced for high-res streaming efficiency
+          maxWidth: 390,
+          maxHeight: 844,
+          quality: 95, // Maximum quality for best visual fidelity in mobile app
           everyNthFrame: 1,
         };
 
@@ -226,8 +231,8 @@ wss.on("connection", (ws, req) => {
         ws.send(
           JSON.stringify({
             type: "stream-started",
-            width: session.viewport?.width || 1080,
-            height: session.viewport?.height || 1920,
+            width: session.viewport?.width || 390,
+            height: session.viewport?.height || 844,
           }),
         );
 

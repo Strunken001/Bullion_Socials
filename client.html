@@ -258,9 +258,9 @@
     // ===================== Configuration =====================
     const SERVER_URL = "https://felix-orthomorphic-manageably.ngrok-free.dev";
 
-    // Server renders at this universal resolution
-    const SERVER_WIDTH = 1080;
-    const SERVER_HEIGHT = 1920;
+    // Server renders at mobile-optimized resolution
+    const SERVER_WIDTH = 390;
+    const SERVER_HEIGHT = 844;
 
     // ===================== Client-Side Responsive Configuration =====================
     // The client automatically detects its own viewport and scales appropriately
@@ -326,7 +326,7 @@
       mobileFrame.style.height = canvasHeight + 'px';
 
       // Update display info
-      resolutionDisplay.textContent = `${SERVER_WIDTH} × ${SERVER_HEIGHT} (Responsive)`;
+      resolutionDisplay.textContent = `${SERVER_WIDTH} × ${SERVER_HEIGHT}`;
 
       console.log(`Canvas: Internal ${SERVER_WIDTH}×${SERVER_HEIGHT}, Display ${canvasWidth.toFixed(0)}×${canvasHeight.toFixed(0)}`);
     }

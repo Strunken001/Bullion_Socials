@@ -5,7 +5,7 @@
 
 const DEFAULT_OPTIONS = {
   format: "jpeg",
-  quality: 85, // Optimized for high-resolution streaming (1080x1920)
+  quality: 95, // Maximum quality for mobile app rendering - best visual fidelity
   everyNthFrame: 1,
 };
 
