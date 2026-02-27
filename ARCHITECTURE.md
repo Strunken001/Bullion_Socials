@@ -306,6 +306,7 @@ One UA String            ──→  Device-Specific UA
 ---
 
 This architecture ensures:
+
 - ✅ **Accurate device rendering** at native resolution
 - ✅ **High-quality visuals** with optimal compression
 - ✅ **Responsive display** on any screen size

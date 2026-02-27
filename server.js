@@ -80,7 +80,10 @@ app.post("/start-session", async (req, res) => {
       .catch(() => {});
 
     const sessionId = uuidv4();
-    createSession(sessionId, context, page, { width: UNIVERSAL_WIDTH, height: UNIVERSAL_HEIGHT });
+    createSession(sessionId, context, page, {
+      width: UNIVERSAL_WIDTH,
+      height: UNIVERSAL_HEIGHT,
+    });
 
     res.json({ sessionId, width: UNIVERSAL_WIDTH, height: UNIVERSAL_HEIGHT });
     console.log(

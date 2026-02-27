@@ -1,13 +1,16 @@
 const sessions = new Map();
 
 function createSession(id, context, page, viewport = {}) {
-  sessions.set(id, { 
-    context, 
-    page, 
-    viewport: { width: viewport.width || 1080, height: viewport.height || 1920 },
-    cdpSession: null, 
+  sessions.set(id, {
+    context,
+    page,
+    viewport: {
+      width: viewport.width || 1080,
+      height: viewport.height || 1920,
+    },
+    cdpSession: null,
     ws: null,
-    lastActivity: Date.now()
+    lastActivity: Date.now(),
   });
 }
 
@@ -33,7 +36,7 @@ async function deleteSession(id) {
     console.log(`Cleaning up session ${id}...`);
     try {
       if (session.cdpSession) {
-        const { stopScreencast } = require('./streamManager');
+        const { stopScreencast } = require("./streamManager");
         await stopScreencast(session.cdpSession).catch(() => {});
       }
       if (session.page) {
@@ -43,7 +46,7 @@ async function deleteSession(id) {
         await session.context.close().catch(() => {});
       }
     } catch (err) {
-      console.warn('Session cleanup warning:', err.message);
+      console.warn("Session cleanup warning:", err.message);
     }
     sessions.delete(id);
     console.log(`Session ${id} deleted`);
@@ -60,11 +63,11 @@ async function cleanupIdleSessions(maxIdleTimeMs) {
   }
 }
 
-module.exports = { 
-  createSession, 
-  getSession, 
-  updateSession, 
+module.exports = {
+  createSession,
+  getSession,
+  updateSession,
   deleteSession,
   cleanupIdleSessions,
-  getAllSessions: () => sessions
+  getAllSessions: () => sessions,
 };

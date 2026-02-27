@@ -257,7 +257,7 @@
   <script>
     // ===================== Configuration =====================
     const SERVER_URL = "https://felix-orthomorphic-manageably.ngrok-free.dev";
-    
+
     // Server renders at this universal resolution
     const SERVER_WIDTH = 1080;
     const SERVER_HEIGHT = 1920;
@@ -265,10 +265,10 @@
     // ===================== Client-Side Responsive Configuration =====================
     // The client automatically detects its own viewport and scales appropriately
     // No device selection needed - works on any screen size!
-    
+
     let DISPLAY_WIDTH = window.innerWidth;
     let DISPLAY_HEIGHT = window.innerHeight;
-    
+
     // Calculate max canvas size based on container
     const MAX_CANVAS_WIDTH = Math.min(DISPLAY_WIDTH - 40, 800); // 40px margin
     const MAX_CANVAS_HEIGHT = Math.min(DISPLAY_HEIGHT - 200, 1200); // 200px for UI
@@ -299,9 +299,9 @@
     function setupResponsiveCanvas() {
       // Calculate canvas size maintaining aspect ratio
       const serverAspectRatio = SERVER_WIDTH / SERVER_HEIGHT;
-      
+
       let canvasWidth, canvasHeight;
-      
+
       // Calculate based on max width or height constraint
       if (MAX_CANVAS_WIDTH / MAX_CANVAS_HEIGHT > serverAspectRatio) {
         // Height is constraining factor
@@ -368,7 +368,7 @@
 
         const data = await response.json();
         sessionId = data.sessionId;
-        
+
         console.log("Session created:", sessionId);
 
         // 2. Connect WebSocket
@@ -552,149 +552,149 @@
 
   </script>
 
-        ws.onerror = (err) => {
-          console.error("WebSocket error:", err);
-          setStatus('disconnected');
-          cleanupSession();
-        };
+  ws.onerror = (err) => {
+  console.error("WebSocket error:", err);
+  setStatus('disconnected');
+  cleanupSession();
+  };
 
-      } catch (err) {
-        console.error("Failed to start session:", err);
-        setStatus('disconnected');
-        cleanupSession();
-        alert("Failed to start session: " + err.message);
-      }
-    }
+  } catch (err) {
+  console.error("Failed to start session:", err);
+  setStatus('disconnected');
+  cleanupSession();
+  alert("Failed to start session: " + err.message);
+  }
+  }
 
-    function cleanupSession() {
-      streaming = false;
-      startBtn.disabled = false;
-      platformSelect.disabled = false;
-      stopBtn.disabled = true;
-    }
+  function cleanupSession() {
+  streaming = false;
+  startBtn.disabled = false;
+  platformSelect.disabled = false;
+  stopBtn.disabled = true;
+  }
 
-    function stopSession() {
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-          sessionId: sessionId,
-          type: "stop-stream"
-        }));
-        ws.close();
-      }
-      overlay.classList.remove('hidden');
-      overlay.textContent = 'Session ended';
-      cleanupSession();
-    }
+  function stopSession() {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+  ws.send(JSON.stringify({
+  sessionId: sessionId,
+  type: "stop-stream"
+  }));
+  ws.close();
+  }
+  overlay.classList.remove('hidden');
+  overlay.textContent = 'Session ended';
+  cleanupSession();
+  }
 
-    // ===================== Frame Rendering =====================
+  // ===================== Frame Rendering =====================
 
-    function renderFrame(arrayBuffer) {
-      const blob = new Blob([arrayBuffer], { type: 'image/jpeg' });
-      createImageBitmap(blob).then(bitmap => {
-        // Draw to full canvas resolution
-        ctx.drawImage(bitmap, 0, 0, REAL_WIDTH, REAL_HEIGHT);
-        bitmap.close();
-      }).catch(err => {
-        console.warn("Frame decode error:", err);
-      });
+  function renderFrame(arrayBuffer) {
+  const blob = new Blob([arrayBuffer], { type: 'image/jpeg' });
+  createImageBitmap(blob).then(bitmap => {
+  // Draw to full canvas resolution
+  ctx.drawImage(bitmap, 0, 0, REAL_WIDTH, REAL_HEIGHT);
+  bitmap.close();
+  }).catch(err => {
+  console.warn("Frame decode error:", err);
+  });
 
-      // FPS counter
-      frameCount++;
-      const now = performance.now();
-      if (now - lastFpsTime >= 1000) {
-        fpsDisplay.textContent = frameCount + ' fps';
-        frameCount = 0;
-        lastFpsTime = now;
-      }
-    }
+  // FPS counter
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFpsTime >= 1000) {
+  fpsDisplay.textContent = frameCount + ' fps';
+  frameCount = 0;
+  lastFpsTime = now;
+  }
+  }
 
-    function handleControlMessage(msg) {
-      switch (msg.type) {
-        case 'stream-started':
-          console.log("Stream started:", msg);
-          setStatus('connected');
-          streaming = true;
-          overlay.classList.add('hidden');
-          stopBtn.disabled = false;
-          break;
-        case 'stream-stopped':
-          console.log("Stream stopped");
-          streaming = false;
-          break;
-        case 'error':
-          console.error("Server error:", msg.message);
-          alert("Server error: " + msg.message);
-          break;
-      }
-    }
+  function handleControlMessage(msg) {
+  switch (msg.type) {
+  case 'stream-started':
+  console.log("Stream started:", msg);
+  setStatus('connected');
+  streaming = true;
+  overlay.classList.add('hidden');
+  stopBtn.disabled = false;
+  break;
+  case 'stream-stopped':
+  console.log("Stream stopped");
+  streaming = false;
+  break;
+  case 'error':
+  console.error("Server error:", msg.message);
+  alert("Server error: " + msg.message);
+  break;
+  }
+  }
 
-    // ===================== Input Handling =====================
+  // ===================== Input Handling =====================
 
-    function sendInput(data) {
-      if (ws && ws.readyState === WebSocket.OPEN && sessionId) {
-        ws.send(JSON.stringify({ sessionId, ...data }));
-      }
-    }
+  function sendInput(data) {
+  if (ws && ws.readyState === WebSocket.OPEN && sessionId) {
+  ws.send(JSON.stringify({ sessionId, ...data }));
+  }
+  }
 
-    // --- Click ---
-    canvas.addEventListener("click", function (e) {
-      if (!streaming) return;
+  // --- Click ---
+  canvas.addEventListener("click", function (e) {
+  if (!streaming) return;
 
-      // Get click position relative to the canvas element
-      const rect = canvas.getBoundingClientRect();
+  // Get click position relative to the canvas element
+  const rect = canvas.getBoundingClientRect();
 
-      // Scale factor: internal resolution / display size
-      const scaleX = REAL_WIDTH / rect.width;
-      const scaleY = REAL_HEIGHT / rect.height;
+  // Scale factor: internal resolution / display size
+  const scaleX = REAL_WIDTH / rect.width;
+  const scaleY = REAL_HEIGHT / rect.height;
 
-      const x = (e.clientX - rect.left) * scaleX;
-      const y = (e.clientY - rect.top) * scaleY;
+  const x = (e.clientX - rect.left) * scaleX;
+  const y = (e.clientY - rect.top) * scaleY;
 
-      sendInput({ type: "click", x: Math.round(x), y: Math.round(y) });
-    });
+  sendInput({ type: "click", x: Math.round(x), y: Math.round(y) });
+  });
 
-    // --- Scroll ---
-    canvas.addEventListener("wheel", function (e) {
-      e.preventDefault();
-      if (!streaming) return;
-      sendInput({ type: "scroll", deltaX: e.deltaX, deltaY: e.deltaY });
-    }, { passive: false });
+  // --- Scroll ---
+  canvas.addEventListener("wheel", function (e) {
+  e.preventDefault();
+  if (!streaming) return;
+  sendInput({ type: "scroll", deltaX: e.deltaX, deltaY: e.deltaY });
+  }, { passive: false });
 
-    // --- Keyboard ---
-    document.addEventListener('keydown', function (e) {
-      if (document.activeElement === document.getElementById('textInput') || !streaming) return;
+  // --- Keyboard ---
+  document.addEventListener('keydown', function (e) {
+  if (document.activeElement === document.getElementById('textInput') || !streaming) return;
 
-      const key = e.key;
-      if (key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
-        sendInput({ type: "keypress", key: key });
-      } else {
-        sendInput({ type: "keydown", key: key });
-      }
-    });
+  const key = e.key;
+  if (key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+  sendInput({ type: "keypress", key: key });
+  } else {
+  sendInput({ type: "keydown", key: key });
+  }
+  });
 
-    document.addEventListener('keyup', function (e) {
-      if (document.activeElement === document.getElementById('textInput') || !streaming) return;
+  document.addEventListener('keyup', function (e) {
+  if (document.activeElement === document.getElementById('textInput') || !streaming) return;
 
-      // Only send keyup for modifiers/special keys to reduce traffic
-      if (e.key.length > 1) {
-        sendInput({ type: "keyup", key: e.key });
-      }
-    });
+  // Only send keyup for modifiers/special keys to reduce traffic
+  if (e.key.length > 1) {
+  sendInput({ type: "keyup", key: e.key });
+  }
+  });
 
-    function sendText() {
-      const input = document.getElementById('textInput');
-      const text = input.value;
-      if (!text) return;
+  function sendText() {
+  const input = document.getElementById('textInput');
+  const text = input.value;
+  if (!text) return;
 
-      sendInput({ type: "type", text: text });
-      input.value = '';
-    }
+  sendInput({ type: "type", text: text });
+  input.value = '';
+  }
 
-    // ===================== Status =====================
+  // ===================== Status =====================
 
-    function setStatus(state) {
-      statusDot.className = 'status-dot ' + state;
-    }
+  function setStatus(state) {
+  statusDot.className = 'status-dot ' + state;
+  }
 
   </script>
 </body>

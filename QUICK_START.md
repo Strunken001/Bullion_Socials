@@ -3,12 +3,15 @@
 ## Setup
 
 1. **Start the Server**
+
 ```bash
 node server.js
 ```
+
 You should see: `Server running on http://localhost:3000`
 
 2. **Access the Client**
+
 - Open your browser to `http://localhost:3000`
 - Or use the ngrok URL for remote access
 
@@ -46,38 +49,42 @@ Click the **Stop** button to end the session and close the browser context.
 
 ## Device Dimensions Reference
 
-| Device | Resolution | Aspect Ratio |
-|--------|------------|--------------|
-| iPhone SE | 375 × 667 | 0.56 |
-| iPhone 11 | 414 × 896 | 0.46 |
-| iPhone 12 | 390 × 844 | 0.46 |
-| iPhone 13 | 390 × 844 | 0.46 |
-| iPhone 14 | 390 × 844 | 0.46 |
-| iPhone 15 | 393 × 852 | 0.46 |
-| Pixel 6 | 412 × 915 | 0.45 |
-| Pixel 7 | 412 × 915 | 0.45 |
-| Galaxy S21 | 360 × 800 | 0.45 |
-| Galaxy S22 | 360 × 800 | 0.45 |
-| iPad | 768 × 1024 | 0.75 |
-| iPad Pro | 1024 × 1366 | 0.75 |
+| Device     | Resolution  | Aspect Ratio |
+| ---------- | ----------- | ------------ |
+| iPhone SE  | 375 × 667   | 0.56         |
+| iPhone 11  | 414 × 896   | 0.46         |
+| iPhone 12  | 390 × 844   | 0.46         |
+| iPhone 13  | 390 × 844   | 0.46         |
+| iPhone 14  | 390 × 844   | 0.46         |
+| iPhone 15  | 393 × 852   | 0.46         |
+| Pixel 6    | 412 × 915   | 0.45         |
+| Pixel 7    | 412 × 915   | 0.45         |
+| Galaxy S21 | 360 × 800   | 0.45         |
+| Galaxy S22 | 360 × 800   | 0.45         |
+| iPad       | 768 × 1024  | 0.75         |
+| iPad Pro   | 1024 × 1366 | 0.75         |
 
 ## Troubleshooting
 
 ### Canvas is too small
+
 - This is normal - the canvas scales to fit your screen while maintaining device aspect ratio
 - The actual rendering is at full device resolution
 - It will look larger/sharper on a bigger monitor
 
 ### Image quality is poor
+
 - Check your network connection
 - Quality is set to 90 (excellent balance)
 - Give the page a few seconds to stabilize
 
 ### Device selection is disabled
+
 - You can't change devices while streaming
 - Click **Stop** first, then select a new device
 
 ### Connection issues
+
 - Ensure the server is running: `node server.js`
 - Check that you're using the correct URL
 - If using ngrok, verify the tunnel is still active
@@ -99,6 +106,7 @@ Click the **Stop** button to end the session and close the browser context.
 ## API Details
 
 ### /start-session (POST)
+
 ```json
 {
   "platform": "instagram",
@@ -109,6 +117,7 @@ Click the **Stop** button to end the session and close the browser context.
 ```
 
 Response:
+
 ```json
 {
   "sessionId": "uuid-here",
@@ -118,6 +127,7 @@ Response:
 ```
 
 ### /end-session (POST)
+
 ```json
 {
   "sessionId": "uuid-here"
@@ -127,6 +137,7 @@ Response:
 ### WebSocket Messages
 
 **Start Stream:**
+
 ```json
 {
   "sessionId": "uuid-here",
@@ -135,6 +146,7 @@ Response:
 ```
 
 **Input Events:**
+
 ```json
 {
   "sessionId": "uuid-here",

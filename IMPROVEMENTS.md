@@ -1,12 +1,15 @@
 # Mobile Rendering Quality Improvements
 
 ## Overview
+
 Your remote browsing feature has been significantly enhanced to support dynamic device viewports and improved rendering quality across different mobile devices and screen sizes.
 
 ## Key Improvements
 
 ### 1. **Multi-Device Support** ✅
+
 Added support for 12+ device presets:
+
 - **iPhones**: iPhone SE, iPhone 11, iPhone 12, iPhone 13, iPhone 14, iPhone 15
 - **Android**: Pixel 6, Pixel 7, Galaxy S21, Galaxy S22
 - **Tablets**: iPad, iPad Pro
@@ -14,22 +17,26 @@ Added support for 12+ device presets:
 The server now accepts device selection and adjusts viewport dimensions accordingly.
 
 ### 2. **Dynamic Viewport Scaling** ✅
+
 - **Server-side**: Captures at exact device resolution (390×844 for iPhone 13, 412×915 for Pixel 7, etc.)
 - **Client-side**: Canvas automatically scales to maintain aspect ratio on any screen
 - **No More Hardcoding**: Removes the fixed 390×844 constraint
 
 ### 3. **Improved Image Quality** ✅
+
 - **Quality Level**: Increased from 100 (misleading JPEG quality metric) to 90
 - **Visual Fidelity**: 90 quality provides excellent clarity with better compression
 - **Reduced Artifacts**: Lower quality value paradoxically reduces JPEG compression artifacts
 - **Network Efficient**: Still maintains reasonable bandwidth usage
 
 ### 4. **Responsive Canvas Rendering** ✅
+
 - Canvas scales proportionally based on device aspect ratio
 - Frame automatically sizes to fit the screen while maintaining native resolution
 - Works perfectly on desktop monitors, tablets, and mobile screens
 
 ### 5. **Better User Interface** ✅
+
 - Added device selection dropdown before starting session
 - Can change devices without restarting (select device, then start new session)
 - Resolution display updates to show actual device dimensions
@@ -38,6 +45,7 @@ The server now accepts device selection and adjusts viewport dimensions accordin
 ## How It Works
 
 ### Workflow:
+
 1. User selects a **device** (or leaves on auto-detect)
 2. User selects a **platform** (Facebook, Instagram, etc.)
 3. Click **Start**
@@ -46,6 +54,7 @@ The server now accepts device selection and adjusts viewport dimensions accordin
 6. Client renders at full quality on canvas, which scales responsively
 
 ### Example Dimensions:
+
 ```
 Device          Width  Height  Aspect
 ─────────────────────────────────────
@@ -60,27 +69,32 @@ iPad Pro        1024   1366    0.75
 ## Technical Changes
 
 ### Server.js
+
 - Added device preset mappings
 - Dynamic viewport calculation based on device selection
 - Quality setting optimized to 90 for better balance
 - Viewport dimensions passed to client after session creation
 
 ### sessionStore.js
+
 - Now stores viewport dimensions with each session
 - Used for dynamic stream configuration
 
 ### client.html
+
 - Device selection dropdown with 12+ presets
 - Dynamic canvas sizing logic
 - Responsive frame container scaling
 - Improved session initialization with device parameters
 
 ### streamManager.js
+
 - Quality default updated to 90 from 100
 
 ## Usage Examples
 
 ### Example 1: iPhone 15 User
+
 ```javascript
 // Client sends:
 { platform: 'instagram', device: 'iPhone 15', width: 393, height: 852 }
@@ -92,6 +106,7 @@ iPad Pro        1024   1366    0.75
 ```
 
 ### Example 2: iPad Pro User
+
 ```javascript
 // Client sends:
 { platform: 'tiktok', device: 'iPad Pro', width: 1024, height: 1366 }
@@ -116,6 +131,7 @@ iPad Pro        1024   1366    0.75
 ## Future Enhancements
 
 Potential additions:
+
 1. Custom viewport dimensions (for testing specific screen sizes)
 2. Network-adaptive quality (adjust quality based on connection)
 3. WebP format support (even better compression)
