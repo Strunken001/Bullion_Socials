@@ -5,7 +5,7 @@
 
 const DEFAULT_OPTIONS = {
   format: "jpeg",
-  quality: 95, // Maximum quality for mobile app rendering - best visual fidelity
+  quality: 100, // Maximum quality for mobile app rendering - best visual fidelity
   everyNthFrame: 1,
 };
 

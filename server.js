@@ -55,7 +55,7 @@ app.post("/start-session", async (req, res) => {
 
     context = await browser.newContext({
       viewport: { width: MOBILE_WIDTH, height: MOBILE_HEIGHT },
-      deviceScaleFactor: 1,
+      deviceScaleFactor: 2, // Simulate Retina display
       locale: "en-US",
       extraHTTPHeaders: {
         "Accept-Language": "en-US,en;q=0.9",
@@ -88,11 +88,11 @@ app.post("/start-session", async (req, res) => {
       sessionId,
       width: MOBILE_WIDTH,
       height: MOBILE_HEIGHT,
-      quality: 95,
+      quality: 100,
       format: "jpeg",
     });
     console.log(
-      `[API] Session created: ${sessionId} | Viewport: ${MOBILE_WIDTH}x${MOBILE_HEIGHT} | Quality: 95 (high fidelity)`,
+      `[API] Session created: ${sessionId} | Viewport: ${MOBILE_WIDTH}x${MOBILE_HEIGHT} | Quality: 100 (high fidelity)`,
     );
   } catch (error) {
     console.error(`[API] Error starting session:`, error.message);
@@ -204,7 +204,7 @@ wss.on("connection", (ws, req) => {
         const streamOptions = {
           maxWidth: 390,
           maxHeight: 844,
-          quality: 95, // Maximum quality for best visual fidelity in mobile app
+          quality: 100, // Maximum quality for best visual fidelity in mobile app
           everyNthFrame: 1,
         };
 
