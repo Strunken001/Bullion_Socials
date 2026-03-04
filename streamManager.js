@@ -3,7 +3,12 @@
  * VIDEO : CDP Page.startScreencast → JPEG → WebSocket (0x01)
  * AUDIO : Cross-platform
  *   Windows → FFmpeg WASAPI loopback (virtual cable or default render device)
- *   Linux   → PulseAudio null-sink → FFmpeg WebM/Opus → WebSocket (0x02)
+ *   Linux   → PulseAudio null-sink → FFmpeg → WebSocket (0x02)
+ *
+ *   By default we encode as WebM/Opus because it's efficient and supported in
+ *   desktop browsers.  For mobile clients that lack WebM support we can
+ *   instead ask FFmpeg for AAC (fragmented MP4) or MP3; the codec is chosen by
+ *   passing an "audioCodec" parameter to start-session.
  */
 
 const { spawn, execFile } = require("child_process");
@@ -56,20 +61,21 @@ async function stopScreencast(cdpSession) {
 
 // ── AUDIO ─────────────────────────────────────────────────────────────────────
 
-async function startAudioStream(sessionId) {
+async function startAudioStream(sessionId, codec = 'opus') {
+  // codec: 'opus' | 'aac' | 'mp3' (defaults to opus)
   if (IS_WINDOWS) {
-    return startAudioStreamWindows(sessionId);
+    return startAudioStreamWindows(sessionId, codec);
   } else {
-    return startAudioStreamLinux(sessionId);
+    return startAudioStreamLinux(sessionId, codec);
   }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
 // WINDOWS: FFmpeg WASAPI loopback capture
 // ══════════════════════════════════════════════════════════════════════════════
-async function startAudioStreamWindows(sessionId) {
+async function startAudioStreamWindows(sessionId, codec = 'opus') {
   const tag = `[Audio:${sessionId.slice(0, 8)}]`;
-  console.log(`\n${tag} ══════ Starting Windows audio pipeline ══════`);
+  console.log(`\n${tag} ══════ Starting Windows audio pipeline (codec=${codec}) ══════`);
 
   // 1. Verify ffmpeg is available
   let ffmpegPath = "ffmpeg";
@@ -129,32 +135,30 @@ async function startAudioStreamWindows(sessionId) {
   // 3. Build FFmpeg args based on what we found
   let ffmpegArgs;
 
-  if (audioDevice && !useLoopback) {
-    // Use the virtual cable as a DirectShow source
+  const inputArgs = audioDevice && !useLoopback
+    ? ["-f", "dshow", "-i", `audio=${audioDevice}`]
+    : ["-f", "wasapi", ...(!audioDevice ? ["-loopback", "1"] : []), "-i", audioDevice || "default"];
+
+  if (codec === 'aac' || codec === 'mp3') {
+    // choose AAC in fragmented MP4 or MP3
+    const codecName = codec === 'aac' ? 'aac' : 'libmp3lame';
+    const format = codec === 'aac' ? 'mp4' : 'mp3';
     ffmpegArgs = [
       "-loglevel", "info",
-      "-f", "dshow",
-      "-i", `audio=${audioDevice}`,
-      "-c:a", "libopus",
+      ...inputArgs,
+      "-c:a", codecName,
       "-b:a", "64k",
-      "-vbr", "on",
-      "-compression_level", "1",
-      "-application", "lowdelay",
-      "-frame_duration", "20",
-      "-f", "webm",
-      "-cluster_size_limit", "2048",
-      "-cluster_time_limit", "100",
-      "pipe:1",
+      "-f", format,
     ];
-    console.log(`${tag} Using DirectShow device: "${audioDevice}"`);
+    if (codec === 'aac') {
+      ffmpegArgs.push("-movflags", "frag_keyframe+empty_moov+default_base_moof");
+    }
+    console.log(`${tag} Using codec ${codec} (format ${format})`);
   } else {
-    // WASAPI loopback — captures whatever Windows is playing (no virtual cable needed)
-    // This requires FFmpeg built with --enable-wasapi
+    // default to Opus/WebM
     ffmpegArgs = [
       "-loglevel", "info",
-      "-f", "wasapi",
-      "-loopback", "1",       // capture render (output) device in loopback mode
-      "-i", "default",
+      ...inputArgs,
       "-c:a", "libopus",
       "-b:a", "64k",
       "-vbr", "on",
@@ -166,18 +170,19 @@ async function startAudioStreamWindows(sessionId) {
       "-cluster_time_limit", "100",
       "pipe:1",
     ];
-    console.log(`${tag} Using WASAPI loopback (default render device)`);
+    console.log(`${tag} Using ${audioDevice && !useLoopback ? 'DirectShow device' : 'WASAPI loopback'}`);
   }
 
-  return spawnFFmpegAudio(sessionId, tag, ffmpegPath, ffmpegArgs, "windows");
+  return spawnFFmpegAudio(sessionId, tag, ffmpegPath, ffmpegArgs, "windows", codec);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
 // LINUX: PulseAudio null-sink + FFmpeg
 // ══════════════════════════════════════════════════════════════════════════════
-async function startAudioStreamLinux(sessionId) {
+async function startAudioStreamLinux(sessionId, codec = 'opus') {
   const tag = `[Audio:${sessionId.slice(0, 8)}]`;
   const sinkName = `sink_${sessionId.replace(/-/g, "_")}`;
+  console.log(`${tag} codec=${codec}`);
 
   console.log(`\n${tag} ══════ Starting Linux audio pipeline ══════`);
 
@@ -244,25 +249,42 @@ async function startAudioStreamLinux(sessionId) {
   const monitorSource = `${sinkName}.monitor`;
   console.log(`${tag} Step 4: Launching FFmpeg on "${monitorSource}"...`);
 
-  const ffmpegArgs = [
-    "-loglevel", "info",
-    "-f", "pulse",
-    "-i", monitorSource,
-    "-c:a", "libopus",
-    "-b:a", "64k",
-    "-vbr", "on",
-    "-compression_level", "1",
-    "-application", "lowdelay",
-    "-frame_duration", "20",
-    "-f", "webm",
-    // Force cluster-aligned chunks — each Node.js data event = complete WebM cluster
-    "-cluster_size_limit", "2048",
-    "-cluster_time_limit", "100",
-    "pipe:1",
-  ];
+  let ffmpegArgs;
+  if (codec === 'aac' || codec === 'mp3') {
+    const format = codec === 'aac' ? 'mp4' : 'mp3';
+    const codecName = codec === 'aac' ? 'aac' : 'libmp3lame';
+    ffmpegArgs = [
+      "-loglevel", "info",
+      "-f", "pulse",
+      "-i", monitorSource,
+      "-c:a", codecName,
+      "-b:a", "64k",
+      "-f", format,
+    ];
+    if (codec === 'aac') {
+      ffmpegArgs.push("-movflags", "frag_keyframe+empty_moov+default_base_moof");
+    }
+  } else {
+    ffmpegArgs = [
+      "-loglevel", "info",
+      "-f", "pulse",
+      "-i", monitorSource,
+      "-c:a", "libopus",
+      "-b:a", "64k",
+      "-vbr", "on",
+      "-compression_level", "1",
+      "-application", "lowdelay",
+      "-frame_duration", "20",
+      "-f", "webm",
+      // Force cluster-aligned chunks — each Node.js data event = complete WebM cluster
+      "-cluster_size_limit", "2048",
+      "-cluster_time_limit", "100",
+      "pipe:1",
+    ];
+  }
 
   const session = await spawnFFmpegAudio(
-    sessionId, tag, "ffmpeg", ffmpegArgs, sinkName,
+    sessionId, tag, "ffmpeg", ffmpegArgs, sinkName, codec,
     { env: { ...process.env, PULSE_SINK: sinkName } }
   );
 
@@ -310,7 +332,7 @@ async function startAudioStreamLinux(sessionId) {
 }
 
 // ── Shared FFmpeg spawn helper ─────────────────────────────────────────────────
-function spawnFFmpegAudio(sessionId, tag, ffmpegBin, args, sinkName, extraSpawnOpts = {}) {
+function spawnFFmpegAudio(sessionId, tag, ffmpegBin, args, sinkName, codec = 'opus', extraSpawnOpts = {}) {
   return new Promise((resolve) => {
     let ffmpeg;
     try {
@@ -434,6 +456,7 @@ function spawnFFmpegAudio(sessionId, tag, ffmpegBin, args, sinkName, extraSpawnO
     resolve({
       method: "pulseaudio",
       sinkName,
+      codec,
 
       /** Attach WebSocket and flush all buffered chunks (including WebM header). */
       flushAudio(socket) {

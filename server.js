@@ -90,18 +90,24 @@ app.post("/start-session", async (req, res) => {
   let browser, context, page, audioSession;
 
   try {
-    const { platform } = req.body;
+    // client may request a specific codec (opus, aac, mp3).  default is opus
+    const { platform, audioCodec = 'opus' } = req.body;
     if (!ALLOWED[platform])
       return res.status(400).json({ error: "Platform not allowed" });
 
     const sessionId = uuidv4();
-    console.log(`\n[Session] Starting ${sessionId} — platform: ${platform}`);
+    console.log(`\n[Session] Starting ${sessionId} — platform: ${platform} codec: ${audioCodec}`);
 
-    // ── 1. Create audio session (sets up PulseAudio sink) ─────────────────
-    audioSession = await startAudioStream(sessionId);
-    console.log(
-      `[Session] Audio method: ${audioSession.method} | sink: ${audioSession.sinkName}`,
-    );
+    // ── 1. Create audio session (sets up PulseAudio sink or equivalent) ──
+    if (audioCodec === 'none') {
+      console.log(`[Session] audioCodec=none; skipping audio pipeline`);
+      audioSession = { method: 'none', codec: 'none', sinkName: null, flushAudio: () => {}, reroute: async () => {}, stop: async () => {} };
+    } else {
+      audioSession = await startAudioStream(sessionId, audioCodec);
+      console.log(
+        `[Session] Audio method: ${audioSession.method} | sink: ${audioSession.sinkName}`,
+      );
+    }
 
     // ── 2. Launch browser — route audio to our dedicated sink ────────────
     browser = await chromium.launch({
@@ -187,7 +193,8 @@ app.post("/start-session", async (req, res) => {
       sessionId,
       width: MOBILE_WIDTH,
       height: MOBILE_HEIGHT,
-      audioMethod: audioSession.method,
+      // report the codec we chose so client can adjust UI/labels
+      audioMethod: audioSession.codec || audioSession.method,
     });
   } catch (err) {
     console.error("[/start-session] Fatal error:", err.message);

@@ -331,6 +331,23 @@
     const SERVER_W = 360;   // Must match server.js MOBILE_WIDTH
     const SERVER_H = 780;   // Must match server.js MOBILE_HEIGHT
 
+    // pick an audio MIME that this browser can decode via MediaSource
+    const SUPPORTED_AUDIO_MIMES = [
+      'audio/webm;codecs=opus',              // desktop Chrome/Firefox
+      'audio/mp4;codecs="mp4a.40.2"',      // mobile Safari/Chrome (AAC)
+      'audio/mpeg'                           // generic MP3 fallback
+    ];
+
+    function pickAudioMime() {
+      for (const m of SUPPORTED_AUDIO_MIMES) {
+        if (window.MediaSource && MediaSource.isTypeSupported(m)) return m;
+      }
+      return null;
+    }
+
+    let AUDIO_MIME = pickAudioMime();
+    const isMobileBrowser = /iP(hone|od|ad)|Android/.test(navigator.userAgent);
+
     // ═══════════════════════════════════════════════════════════════════════════
     // DOM refs
     // ═══════════════════════════════════════════════════════════════════════════
@@ -406,20 +423,33 @@
     function initAudio() {
       if (audioEl) { console.log("[Audio] initAudio called but already initialised"); return; }
 
+      if (!AUDIO_MIME) {
+        setAudioBanner("⚠ No supported audio codec", "#f85149");
+        console.error("[Audio] no MIME available for MediaSource on this browser");
+        return;
+      }
+
       console.log("[Audio] Initialising MSE pipeline...");
       console.log("[Audio]   MediaSource supported:", !!window.MediaSource);
       console.log("[Audio]   MIME supported (" + AUDIO_MIME + "):", window.MediaSource ? MediaSource.isTypeSupported(AUDIO_MIME) : "N/A");
 
       if (!window.MediaSource || !MediaSource.isTypeSupported(AUDIO_MIME)) {
         setAudioBanner("⚠ Audio not supported in this browser", "#f85149");
-        console.error("[Audio] Cannot initialise — browser does not support MediaSource or WebM/Opus");
+        console.error("[Audio] Cannot initialise — MediaSource not available for", AUDIO_MIME);
         return;
       }
 
-      audioEl = new Audio();
+      // mobile Safari/Chrome only implement MSE on a <video> element
+      const tagName = isMobileBrowser ? 'video' : 'audio';
+      audioEl = document.createElement(tagName);
       audioEl.volume = 1.0;
+      audioEl.autoplay = true;
+      audioEl.playsInline = true;
+      audioEl.muted = false;
+      audioEl.style.display = 'none';
+      document.body.appendChild(audioEl);
 
-      // Log every audio element event
+      // Log every audio/video element event
       ["play", "pause", "playing", "waiting", "stalled", "ended", "error", "canplay", "canplaythrough"].forEach(ev => {
         audioEl.addEventListener(ev, () => console.log(`[Audio] <audio> event: "${ev}" | paused=${audioEl.paused} | currentTime=${audioEl.currentTime.toFixed(3)} | readyState=${audioEl.readyState}`));
       });
@@ -508,7 +538,7 @@
     // Expose a global diagnostic function — call audioDebug() in browser console
     window.audioDebug = function () {
       console.group("🎵 Audio Pipeline Diagnostics");
-      console.log("MIME supported:", MediaSource?.isTypeSupported?.('audio/webm; codecs="opus"'));
+      console.log("selected AUDIO_MIME:", AUDIO_MIME, "supported?", MediaSource?.isTypeSupported?.(AUDIO_MIME));
       console.log("audioEl:", audioEl ? { paused: audioEl.paused, volume: audioEl.volume, readyState: audioEl.readyState, currentTime: audioEl.currentTime, src: audioEl.src?.slice(0, 40) } : null);
       console.log("mediaSource readyState:", mediaSource?.readyState);
       console.log("sourceBuffer:", sourceBuffer ? { updating: sourceBuffer.updating, mode: sourceBuffer.mode, buffered: sourceBuffer.buffered.length > 0 ? `${sourceBuffer.buffered.start(0).toFixed(2)}–${sourceBuffer.buffered.end(sourceBuffer.buffered.length - 1).toFixed(2)}s` : "empty" } : null);
@@ -566,10 +596,16 @@
       // Log the very first chunks in detail
       if (totalAudioChunksReceived <= 5) {
         console.log(`[Audio] Chunk #${totalAudioChunksReceived} received: ${buf.byteLength} bytes | audioReady=${audioReady} | MSE readyState=${mediaSource?.readyState} | queue=${audioQueue.length}`);
-        // Log first bytes to verify WebM header (should start with 0x1A 0x45 0xDF 0xA3 = EBML magic)
+        // Log first bytes to help debug codec/container issues
         const bytes = new Uint8Array(buf.slice(0, 4));
         const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join(" ");
-        console.log(`[Audio]   First 4 bytes: ${hex} ${totalAudioChunksReceived === 1 ? "(should be '1a 45 df a3' for valid WebM)" : ""}`);
+        let expectMsg = "";
+        if (AUDIO_MIME && AUDIO_MIME.includes('webm')) {
+          expectMsg = "(should be '1a 45 df a3' for WebM)";
+        } else if (AUDIO_MIME && AUDIO_MIME.includes('mp4')) {
+          expectMsg = "(MP4 ftyp header expected, starts with 00 00 00)";
+        }
+        console.log(`[Audio]   First 4 bytes: ${hex} ${expectMsg}`);
       }
 
       // Stats
@@ -655,13 +691,23 @@
       startBtn.disabled = true;
       platformSel.disabled = true;
 
-      initAudio();
+      if (!AUDIO_MIME) {
+        console.warn("[Audio] no supported MIME; audio will be disabled");
+      } else {
+        initAudio();
+        resumeAudioOnGesture(); // ensure user gesture happens as part of starting
+      }
 
       try {
         const r = await fetch(SERVER_URL + "/start-session", {
           method: "POST",
           headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "1" },
-          body: JSON.stringify({ platform: platformSel.value }),
+          body: JSON.stringify({
+            platform: platformSel.value,
+            audioCodec: AUDIO_MIME
+              ? (AUDIO_MIME.includes('webm') ? 'opus' : AUDIO_MIME.includes('mp4') ? 'aac' : 'opus')
+              : 'none'
+          }),
         });
         if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
 
@@ -669,7 +715,12 @@
         sessionId = data.sessionId;
 
         // Show which audio method the server is using
-        const methodLabels = { pulseaudio: "🎵 PulseAudio", none: "❌ No audio" };
+        const methodLabels = {
+          pulseaudio: "🎵 PulseAudio",
+          opus: "🎵 Opus/WebM",
+          aac: "🎵 AAC/MP4",
+          none: "❌ No audio",
+        };
         audioMethodEl.textContent = methodLabels[data.audioMethod] || data.audioMethod;
         if (data.audioMethod === "none") setAudioBanner("⚠ Server has no audio support (PulseAudio not found)", "#f85149");
 
