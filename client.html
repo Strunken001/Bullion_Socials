@@ -4,9 +4,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Remote Browser Control (Mobile)</title>
+  <title>Remote Mobile Browser</title>
   <style>
-    * {
+    *,
+    *::before,
+    *::after {
       margin: 0;
       padding: 0;
       box-sizing: border-box;
@@ -20,36 +22,41 @@
       display: flex;
       flex-direction: column;
       align-items: center;
+      overflow-x: hidden;
     }
 
+    /* ── Header ─────────────────────────────────────────────────────────── */
     .header {
       width: 100%;
-      padding: 16px 24px;
+      padding: 10px 16px;
       background: #161820;
       border-bottom: 1px solid #2d2f3a;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 16px;
+      gap: 10px;
       position: sticky;
       top: 0;
-      z-index: 10;
+      z-index: 20;
+      flex-wrap: wrap;
     }
 
     .header h1 {
-      font-size: 18px;
+      font-size: 15px;
       font-weight: 600;
       color: #58a6ff;
+      white-space: nowrap;
     }
 
     .controls {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 8px;
+      flex-wrap: wrap;
     }
 
     select {
-      padding: 8px 12px;
+      padding: 6px 10px;
       background: #21262d;
       border: 1px solid #30363d;
       color: #c9d1d9;
@@ -62,12 +69,42 @@
       border-color: #58a6ff;
     }
 
-    .status {
-      display: flex;
-      align-items: center;
-      gap: 8px;
+    button {
+      padding: 6px 14px;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      background: #21262d;
+      color: #c9d1d9;
       font-size: 13px;
-      color: #8b949e;
+      cursor: pointer;
+      transition: all .15s;
+      white-space: nowrap;
+    }
+
+    button:hover {
+      background: #30363d;
+      border-color: #8b949e;
+    }
+
+    button.primary {
+      background: #238636;
+      border-color: #2ea043;
+      color: #fff;
+    }
+
+    button.primary:hover {
+      background: #2ea043;
+    }
+
+    button.danger {
+      background: #da3633;
+      border-color: #b91c1c;
+      color: #fff;
+    }
+
+    button:disabled {
+      opacity: .45;
+      cursor: not-allowed;
     }
 
     .status-dot {
@@ -75,7 +112,8 @@
       height: 8px;
       border-radius: 50%;
       background: #f85149;
-      transition: background 0.3s;
+      flex-shrink: 0;
+      transition: background .3s;
     }
 
     .status-dot.connected {
@@ -91,85 +129,108 @@
 
       0%,
       100% {
-        opacity: 1;
+        opacity: 1
       }
 
       50% {
-        opacity: 0.4;
+        opacity: .4
       }
     }
 
-    button {
-      padding: 8px 16px;
-      border: 1px solid #30363d;
-      border-radius: 6px;
-      background: #21262d;
-      color: #c9d1d9;
-      font-size: 13px;
-      cursor: pointer;
-      transition: all 0.15s;
-    }
-
-    button:hover {
-      background: #30363d;
-      border-color: #8b949e;
-    }
-
-    button.primary {
-      background: #238636;
-      border-color: #2ea043;
-      color: white;
-    }
-
-    button.primary:hover {
-      background: #2ea043;
-    }
-
-    button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-
-    /* Mobile Frame Styling */
+    /* ── Mobile frame ────────────────────────────────────────────────────── */
     .mobile-frame {
-      margin: 24px auto;
-      border: 12px solid #2d2f3a;
-      border-radius: 36px;
+      margin: 16px auto 0;
+      border: 10px solid #2d2f3a;
+      border-radius: 32px;
       background: #000;
       overflow: hidden;
       position: relative;
-      box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
-    }
-
-    .canvas-container {
-      position: relative;
-      width: 100%;
-      height: 100%;
-      background: #000;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      box-shadow: 0 0 40px rgba(0, 0, 0, .6);
+      flex-shrink: 0;
     }
 
     canvas {
       display: block;
       width: 100%;
       height: 100%;
-      cursor: touch;
-      /* Mobile feel */
+      /* tell the browser not to do any default touch actions so
+         our touchmove handler handles all scrolling */
+      touch-action: none;
+      cursor: default;
+      image-rendering: auto;
+      -webkit-user-select: none;
+      user-select: none;
     }
 
-    .input-bar {
+    .overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, .75);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #8b949e;
+      font-size: 15px;
+      text-align: center;
+      padding: 20px;
+      z-index: 5;
+    }
+
+    .overlay.hidden {
+      display: none;
+    }
+
+    /* ── Info / controls below frame ─────────────────────────────────────── */
+    .info-bar {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      justify-content: center;
+      padding: 6px 16px;
+      font-size: 11px;
+      color: #484f58;
       width: 100%;
-      max-width: 600px;
-      padding: 0 16px 24px;
+      max-width: 420px;
+    }
+
+    /* ── Scroll buttons ──────────────────────────────────────────────────── */
+    .scroll-bar {
       display: flex;
       gap: 8px;
+      padding: 6px 16px 4px;
+      width: 100%;
+      max-width: 420px;
+      justify-content: center;
+    }
+
+    .scroll-bar button {
+      font-size: 12px;
+      padding: 5px 12px;
+    }
+
+    /* ── Audio banner ────────────────────────────────────────────────────── */
+    #audioBanner {
+      width: 100%;
+      max-width: 480px;
+      padding: 6px 16px;
+      font-size: 12px;
+      text-align: center;
+      color: #8b949e;
+    }
+
+    /* ── Text input ──────────────────────────────────────────────────────── */
+    .input-bar {
+      display: flex;
+      gap: 8px;
+      padding: 6px 16px 16px;
+      width: 100%;
+      max-width: 480px;
     }
 
     .input-bar input {
       flex: 1;
-      padding: 10px 14px;
+      padding: 9px 12px;
       background: #161820;
       border: 1px solid #30363d;
       border-radius: 6px;
@@ -181,521 +242,663 @@
     .input-bar input:focus {
       border-color: #58a6ff;
     }
-
-    .overlay {
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0, 0, 0, 0.7);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      color: #8b949e;
-      font-size: 16px;
-      text-align: center;
-      padding: 20px;
-      z-index: 5;
-    }
-
-    .overlay.hidden {
-      display: none;
-    }
-
-    .info-bar {
-      width: 100%;
-      max-width: 600px;
-      padding: 0 16px 8px;
-      display: flex;
-      justify-content: space-between;
-      font-size: 12px;
-      color: #484f58;
-    }
   </style>
 </head>
 
 <body>
 
+  <!-- ── Header ────────────────────────────────────────────────────────────── -->
   <div class="header">
-    <h1>📱 Remote Browser - Auto Responsive</h1>
+    <h1>📱 Remote Browser</h1>
     <div class="controls">
       <select id="platformSelect">
-        <option value="facebook">Facebook</option>
         <option value="instagram">Instagram</option>
-        <option value="x">Twitter / X</option>
         <option value="tiktok">TikTok</option>
+        <option value="facebook">Facebook</option>
+        <option value="x">Twitter / X</option>
         <option value="linkedin">LinkedIn</option>
+        <option value="discord">Discord</option>
+        <option value="messenger">Messenger</option>
+        <option value="telegram">Telegram</option>
       </select>
-      <div class="status">
-        <div class="status-dot" id="statusDot"></div>
-      </div>
+      <div class="status-dot" id="statusDot"></div>
       <button class="primary" id="startBtn" onclick="startSession()">Start</button>
       <button id="stopBtn" onclick="stopSession()" disabled>Stop</button>
     </div>
   </div>
 
+  <!-- ── Mobile frame ──────────────────────────────────────────────────────── -->
   <div class="mobile-frame" id="mobileFrame">
-    <div class="canvas-container">
-      <canvas id="screen"></canvas>
-      <div class="overlay" id="overlay">Select a platform and click Start</div>
-    </div>
+    <canvas id="screen"></canvas>
+    <div class="overlay" id="overlay">Select a platform and click Start</div>
   </div>
 
+  <!-- ── Stats ─────────────────────────────────────────────────────────────── -->
   <div class="info-bar">
-    <span id="resolution">Auto</span>
-    <span id="fps">0 fps</span>
+    <span id="resolutionEl">—</span>
+    <span id="fpsEl">0 fps</span>
+    <span id="audioStatsEl">no audio</span>
+    <span id="audioMethodEl">—</span>
   </div>
 
+  <!-- ── Scroll buttons (click or hold) ────────────────────────────────────── -->
+  <div class="scroll-bar" id="scrollBar" style="display:none">
+    <button id="scrollTopBtn">▲▲</button>
+    <button id="scrollUpBtn">▲ Up</button>
+    <button id="scrollDownBtn">▼ Down</button>
+    <button id="scrollBotBtn">▼▼</button>
+  </div>
+
+  <!-- ── Audio banner ───────────────────────────────────────────────────────── -->
+  <div id="audioBanner">🔇 Audio not started</div>
+
+  <!-- ── Audio debug button ────────────────────────────────────────────────── -->
+  <div class="input-bar" style="padding-bottom:4px">
+    <button onclick="window.audioDebug?.()" style="background:#1f6feb;border-color:#1f6feb;font-size:12px">
+      🔍 Audio Debug (check console)
+    </button>
+    <button
+      onclick="if(audioEl&&audioEl.paused)audioEl.play().then(()=>setAudioBanner('🔊 Playing','#3fb950')).catch(e=>setAudioBanner('✗ '+e.message,'#f85149'));else setAudioBanner('Already playing or not ready','#8b949e')"
+      style="background:#238636;border-color:#2ea043;font-size:12px">
+      ▶ Force Play Audio
+    </button>
+  </div>
+
+  <!-- ── Text input ────────────────────────────────────────────────────────── -->
   <div class="input-bar">
-    <input type="text" id="textInput" placeholder="Type text..."
-      onkeydown="if(event.key==='Enter'){sendText(); event.preventDefault();}">
+    <input id="textInput" type="text" placeholder="Type text to send…"
+      onkeydown="if(event.key==='Enter'){sendText();event.preventDefault();}">
     <button onclick="sendText()">Send</button>
   </div>
 
   <script>
-    // ===================== Configuration =====================
-    const SERVER_URL = "https://felix-orthomorphic-manageably.ngrok-free.dev";
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Config
+    // ═══════════════════════════════════════════════════════════════════════════
+    // SERVER_URL: auto-detect the Node server.
+    // If you're opening this file from VS Code Live Server (port 5500) or directly
+    // from the filesystem, we fall back to localhost:3000 automatically.
+    // Change the fallback if your server runs on a different host/port.
+    const SERVER_URL = (() => {
+      const origin = window.location.origin;
+      // If served directly by the Node/Express server (port 3000), use that origin
+      if (origin.includes(":3000")) return origin;
+      // Opened from VS Code Live Server, file://, or any other port → point at Node server
+      return "http://localhost:3000";
+    })();
+    console.log("[Config] SERVER_URL resolved to:", SERVER_URL);
 
-    // Server renders at mobile-optimized resolution
-    const SERVER_WIDTH = 390;
-    const SERVER_HEIGHT = 844;
+    const SERVER_W = 360;   // Must match server.js MOBILE_WIDTH
+    const SERVER_H = 780;   // Must match server.js MOBILE_HEIGHT
 
-    // ===================== Client-Side Responsive Configuration =====================
-    // The client automatically detects its own viewport and scales appropriately
-    // No device selection needed - works on any screen size!
+    // ═══════════════════════════════════════════════════════════════════════════
+    // DOM refs
+    // ═══════════════════════════════════════════════════════════════════════════
+    const canvas = document.getElementById("screen");
+    const ctx2d = canvas.getContext("2d");
+    const overlay = document.getElementById("overlay");
+    const statusDot = document.getElementById("statusDot");
+    const startBtn = document.getElementById("startBtn");
+    const stopBtn = document.getElementById("stopBtn");
+    const platformSel = document.getElementById("platformSelect");
+    const mobileFrame = document.getElementById("mobileFrame");
+    const scrollBar = document.getElementById("scrollBar");
+    const fpsEl = document.getElementById("fpsEl");
+    const audioStatsEl = document.getElementById("audioStatsEl");
+    const audioMethodEl = document.getElementById("audioMethodEl");
+    const resolutionEl = document.getElementById("resolutionEl");
+    const audioBanner = document.getElementById("audioBanner");
 
-    let DISPLAY_WIDTH = window.innerWidth;
-    let DISPLAY_HEIGHT = window.innerHeight;
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Responsive canvas
+    // ═══════════════════════════════════════════════════════════════════════════
+    function setupCanvas() {
+      const maxW = Math.min(window.innerWidth - 24, 480);
+      const maxH = window.innerHeight - 160;
+      const ratio = SERVER_W / SERVER_H;
+      let dW, dH;
+      if (maxW / maxH > ratio) { dH = maxH; dW = dH * ratio; }
+      else { dW = maxW; dH = dW / ratio; }
 
-    // Calculate max canvas size based on container
-    const MAX_CANVAS_WIDTH = Math.min(DISPLAY_WIDTH - 40, 800); // 40px margin
-    const MAX_CANVAS_HEIGHT = Math.min(DISPLAY_HEIGHT - 200, 1200); // 200px for UI
+      canvas.width = SERVER_W;
+      canvas.height = SERVER_H;
+      canvas.style.width = dW + "px";
+      canvas.style.height = dH + "px";
+      mobileFrame.style.width = dW + "px";
+      mobileFrame.style.height = dH + "px";
+      resolutionEl.textContent = `${SERVER_W}×${SERVER_H}`;
+    }
+    setupCanvas();
+    window.addEventListener("resize", setupCanvas);
 
-    // ===================== State =====================
+    // ═══════════════════════════════════════════════════════════════════════════
+    // State
+    // ═══════════════════════════════════════════════════════════════════════════
     let sessionId = null;
     let ws = null;
     let streaming = false;
 
-    // FPS tracking
-    let frameCount = 0;
-    let lastFpsTime = performance.now();
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Audio — MediaSource Extensions, WebM/Opus
+    // ═══════════════════════════════════════════════════════════════════════════
+    // The server sends WebM/Opus chunks prefixed with byte 0x02.
+    // We pipe them into a MediaSource SourceBuffer for seamless playback.
+    // On first user gesture we resume the AudioContext (browser autoplay policy).
 
-    // DOM elements
-    const canvas = document.getElementById('screen');
-    const ctx = canvas.getContext('2d');
-    const overlay = document.getElementById('overlay');
-    const statusDot = document.getElementById('statusDot');
-    const startBtn = document.getElementById('startBtn');
-    const stopBtn = document.getElementById('stopBtn');
-    const fpsDisplay = document.getElementById('fps');
-    const platformSelect = document.getElementById('platformSelect');
-    const resolutionDisplay = document.getElementById('resolution');
-    const mobileFrame = document.getElementById('mobileFrame');
+    let mediaSource = null;
+    let sourceBuffer = null;
+    let audioEl = null;
+    let audioReady = false;
+    const audioQueue = [];     // chunks waiting for MSE to be ready
 
-    // ===================== Responsive Canvas Setup =====================
+    let audioChunkCount = 0;
+    let audioByteCount = 0;
+    let lastAudioStatTs = performance.now();
 
-    function setupResponsiveCanvas() {
-      // Calculate canvas size maintaining aspect ratio
-      const serverAspectRatio = SERVER_WIDTH / SERVER_HEIGHT;
+    const AUDIO_MIME = 'audio/webm;codecs=opus';
 
-      let canvasWidth, canvasHeight;
-
-      // Calculate based on max width or height constraint
-      if (MAX_CANVAS_WIDTH / MAX_CANVAS_HEIGHT > serverAspectRatio) {
-        // Height is constraining factor
-        canvasHeight = MAX_CANVAS_HEIGHT;
-        canvasWidth = canvasHeight * serverAspectRatio;
-      } else {
-        // Width is constraining factor
-        canvasWidth = MAX_CANVAS_WIDTH;
-        canvasHeight = canvasWidth / serverAspectRatio;
-      }
-
-      // Set canvas internal resolution (always server resolution for quality)
-      canvas.width = SERVER_WIDTH;
-      canvas.height = SERVER_HEIGHT;
-
-      // Set canvas display size (responsive to screen)
-      canvas.style.width = canvasWidth + 'px';
-      canvas.style.height = canvasHeight + 'px';
-
-      // Update frame container
-      mobileFrame.style.width = canvasWidth + 'px';
-      mobileFrame.style.height = canvasHeight + 'px';
-
-      // Update display info
-      resolutionDisplay.textContent = `${SERVER_WIDTH} × ${SERVER_HEIGHT}`;
-
-      console.log(`Canvas: Internal ${SERVER_WIDTH}×${SERVER_HEIGHT}, Display ${canvasWidth.toFixed(0)}×${canvasHeight.toFixed(0)}`);
+    function setAudioBanner(msg, color) {
+      audioBanner.textContent = msg;
+      audioBanner.style.color = color || "#8b949e";
+      console.log("[AudioBanner]", msg);
     }
 
-    // Setup on load
-    setupResponsiveCanvas();
+    function initAudio() {
+      if (audioEl) { console.log("[Audio] initAudio called but already initialised"); return; }
 
-    // Recalculate on window resize
-    window.addEventListener('resize', () => {
-      DISPLAY_WIDTH = window.innerWidth;
-      DISPLAY_HEIGHT = window.innerHeight;
-      setupResponsiveCanvas();
-    });
+      console.log("[Audio] Initialising MSE pipeline...");
+      console.log("[Audio]   MediaSource supported:", !!window.MediaSource);
+      console.log("[Audio]   MIME supported (" + AUDIO_MIME + "):", window.MediaSource ? MediaSource.isTypeSupported(AUDIO_MIME) : "N/A");
 
-    // ===================== Session Management =====================
+      if (!window.MediaSource || !MediaSource.isTypeSupported(AUDIO_MIME)) {
+        setAudioBanner("⚠ Audio not supported in this browser", "#f85149");
+        console.error("[Audio] Cannot initialise — browser does not support MediaSource or WebM/Opus");
+        return;
+      }
 
+      audioEl = new Audio();
+      audioEl.volume = 1.0;
+
+      // Log every audio element event
+      ["play", "pause", "playing", "waiting", "stalled", "ended", "error", "canplay", "canplaythrough"].forEach(ev => {
+        audioEl.addEventListener(ev, () => console.log(`[Audio] <audio> event: "${ev}" | paused=${audioEl.paused} | currentTime=${audioEl.currentTime.toFixed(3)} | readyState=${audioEl.readyState}`));
+      });
+      audioEl.addEventListener("error", () => {
+        const err = audioEl.error;
+        console.error("[Audio] <audio> MediaError:", err ? `code=${err.code} message=${err.message}` : "unknown");
+      });
+
+      mediaSource = new MediaSource();
+      console.log("[Audio] MediaSource created — readyState:", mediaSource.readyState);
+
+      mediaSource.addEventListener("sourceopen", () => {
+        console.log("[Audio] MediaSource sourceopen fired — readyState:", mediaSource.readyState);
+        try {
+          sourceBuffer = mediaSource.addSourceBuffer(AUDIO_MIME);
+          sourceBuffer.mode = "sequence";
+          console.log("[Audio] SourceBuffer created — mode:", sourceBuffer.mode);
+
+          let playStarted = false;
+          sourceBuffer.addEventListener("updateend", () => {
+            // Log buffer state periodically
+            if (sourceBuffer.buffered.length > 0) {
+              const start = sourceBuffer.buffered.start(0);
+              const end = sourceBuffer.buffered.end(sourceBuffer.buffered.length - 1);
+              const ahead = end - (audioEl ? audioEl.currentTime : 0);
+              if (Math.random() < 0.05) {
+                console.log(`[Audio] Buffer: ${start.toFixed(2)}s–${end.toFixed(2)}s | ahead: ${ahead.toFixed(2)}s | queue: ${audioQueue.length}`);
+              }
+
+              // Start playback on FIRST chunk successfully appended
+              if (!playStarted && audioEl && audioEl.paused) {
+                playStarted = true;
+                console.log("[Audio] First chunk appended — calling play() now");
+                audioEl.play().then(() => {
+                  console.log("[Audio] ✓ play() resolved — audio is live");
+                  setAudioBanner("🔊 Audio streaming (live)", "#3fb950");
+                }).catch((err) => {
+                  console.warn("[Audio] play() blocked by autoplay policy:", err.name, err.message);
+                  setAudioBanner("👆 Tap the page or click ▶ Force Play Audio", "#d29922");
+                });
+              }
+            }
+            drainAudioQueue();
+          });
+
+          sourceBuffer.addEventListener("error", (e) => {
+            console.error("[Audio] SourceBuffer error event:", e);
+            setAudioBanner("⚠ Audio buffer error", "#f85149");
+          });
+
+          audioReady = true;
+          console.log("[Audio] audioReady = true | draining queue of", audioQueue.length, "chunks");
+          drainAudioQueue();
+
+          // Don't call play() here — call it after the first chunk is appended
+          // so the browser has actual data to play (avoids NotAllowedError on empty streams)
+          console.log("[Audio] MSE ready — play() will be called after first chunk appends");
+          setAudioBanner("⏳ Audio pipeline ready — waiting for first chunk…", "#d29922");
+        } catch (e) {
+          console.error("[Audio] SourceBuffer init error:", e.name, e.message);
+          setAudioBanner("⚠ MSE init error: " + e.message, "#f85149");
+        }
+      });
+
+      mediaSource.addEventListener("sourceclose", () => console.warn("[Audio] MediaSource sourceclose — stream ended"));
+      mediaSource.addEventListener("error", () => console.error("[Audio] MediaSource error event"));
+
+      const objectURL = URL.createObjectURL(mediaSource);
+      audioEl.src = objectURL;
+      console.log("[Audio] audioEl.src set to blob URL:", objectURL.slice(0, 40) + "...");
+    }
+
+    // Resume audio on any user interaction (handles browser autoplay policy)
+    function resumeAudioOnGesture() {
+      if (audioEl && audioEl.paused) {
+        console.log("[Audio] Resuming on user gesture — audioEl.paused was true");
+        audioEl.play()
+          .then(() => {
+            console.log("[Audio] ✓ Resumed after user gesture");
+            setAudioBanner("🔊 Audio streaming (live)", "#3fb950");
+          })
+          .catch((e) => console.warn("[Audio] Resume after gesture failed:", e.message));
+      }
+    }
+
+    // Expose a global diagnostic function — call audioDebug() in browser console
+    window.audioDebug = function () {
+      console.group("🎵 Audio Pipeline Diagnostics");
+      console.log("MIME supported:", MediaSource?.isTypeSupported?.('audio/webm; codecs="opus"'));
+      console.log("audioEl:", audioEl ? { paused: audioEl.paused, volume: audioEl.volume, readyState: audioEl.readyState, currentTime: audioEl.currentTime, src: audioEl.src?.slice(0, 40) } : null);
+      console.log("mediaSource readyState:", mediaSource?.readyState);
+      console.log("sourceBuffer:", sourceBuffer ? { updating: sourceBuffer.updating, mode: sourceBuffer.mode, buffered: sourceBuffer.buffered.length > 0 ? `${sourceBuffer.buffered.start(0).toFixed(2)}–${sourceBuffer.buffered.end(sourceBuffer.buffered.length - 1).toFixed(2)}s` : "empty" } : null);
+      console.log("audioReady:", audioReady);
+      console.log("audioQueue.length:", audioQueue.length);
+      console.log("totalAudioChunksReceived:", totalAudioChunksReceived);
+      console.groupEnd();
+      alert("Audio diagnostics printed to console (F12 → Console)");
+    };
+    document.addEventListener("click", resumeAudioOnGesture, { passive: true });
+    document.addEventListener("keydown", resumeAudioOnGesture, { passive: true });
+    document.addEventListener("touchend", resumeAudioOnGesture, { passive: true });
+
+    function drainAudioQueue() {
+      if (!sourceBuffer || !audioReady || sourceBuffer.updating || audioQueue.length === 0) return;
+
+      // If we've buffered more than 2 seconds ahead, drop the queue to stay live
+      if (sourceBuffer.buffered.length > 0 && audioEl) {
+        const ahead = sourceBuffer.buffered.end(sourceBuffer.buffered.length - 1) - audioEl.currentTime;
+        if (ahead > 2.0) {
+          console.warn("[Audio] Buffer lead too large (" + ahead.toFixed(2) + "s) — dropping queue");
+          audioQueue.length = 0;
+          return;
+        }
+      }
+
+      const chunk = audioQueue.shift();
+      try {
+        sourceBuffer.appendBuffer(chunk);
+      } catch (e) {
+        if (e.name === "QuotaExceededError") pruneAudioBuffer();
+        else audioQueue.length = 0; // unrecoverable — clear
+      }
+    }
+
+    function pruneAudioBuffer() {
+      if (!sourceBuffer || sourceBuffer.updating || !audioEl) return;
+      const start = sourceBuffer.buffered.length > 0 ? sourceBuffer.buffered.start(0) : 0;
+      const pruneEnd = Math.max(start, audioEl.currentTime - 3);
+      if (pruneEnd > start) {
+        try { sourceBuffer.remove(start, pruneEnd); } catch { }
+      }
+    }
+
+    let totalAudioChunksReceived = 0;
+
+    function receiveAudioChunk(buf) {
+      totalAudioChunksReceived++;
+
+      // Guard: skip tiny fragments that can't be valid WebM clusters
+      if (buf.byteLength < 4) {
+        console.warn(`[Audio] Skipping micro-chunk of ${buf.byteLength}B (not a valid WebM cluster)`);
+        return;
+      }
+      // Log the very first chunks in detail
+      if (totalAudioChunksReceived <= 5) {
+        console.log(`[Audio] Chunk #${totalAudioChunksReceived} received: ${buf.byteLength} bytes | audioReady=${audioReady} | MSE readyState=${mediaSource?.readyState} | queue=${audioQueue.length}`);
+        // Log first bytes to verify WebM header (should start with 0x1A 0x45 0xDF 0xA3 = EBML magic)
+        const bytes = new Uint8Array(buf.slice(0, 4));
+        const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join(" ");
+        console.log(`[Audio]   First 4 bytes: ${hex} ${totalAudioChunksReceived === 1 ? "(should be '1a 45 df a3' for valid WebM)" : ""}`);
+      }
+
+      // Stats
+      audioChunkCount++;
+      audioByteCount += buf.byteLength;
+      const now = performance.now();
+      if (now - lastAudioStatTs >= 1000) {
+        const statusMsg = `${audioChunkCount} audio/s · ${(audioByteCount / 1024).toFixed(1)} KB/s · total: ${(totalAudioChunksReceived)} chunks`;
+        audioStatsEl.textContent = statusMsg;
+        console.log(`[Audio] Stats: ${statusMsg} | audioEl.paused=${audioEl?.paused} | audioEl.readyState=${audioEl?.readyState}`);
+        audioChunkCount = 0; audioByteCount = 0; lastAudioStatTs = now;
+        if (audioEl && !audioEl.paused) setAudioBanner("🔊 Audio streaming (live)", "#3fb950");
+      }
+
+      if (!audioReady) {
+        if (audioQueue.length < 200) {
+          audioQueue.push(buf);
+          if (audioQueue.length === 1) console.log("[Audio] Buffering (MSE not ready yet)...");
+        } else {
+          console.warn("[Audio] Queue full (200 chunks) — dropping. MSE may be stuck.");
+        }
+        return;
+      }
+      audioQueue.push(buf);
+      drainAudioQueue();
+    }
+
+    function stopAudio() {
+      audioReady = false;
+      audioQueue.length = 0;
+      if (audioEl) {
+        audioEl.pause();
+        try { if (mediaSource?.readyState === "open") mediaSource.endOfStream(); } catch { }
+        audioEl.src = "";
+        audioEl = null;
+      }
+      mediaSource = null;
+      sourceBuffer = null;
+      setAudioBanner("🔇 Audio stopped");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Video rendering — ImageBitmap decoded off main thread, painted on rAF
+    // ═══════════════════════════════════════════════════════════════════════════
+    let pendingBitmap = null;
+    let rafScheduled = false;
+    let frameCount = 0;
+    let lastFpsTs = performance.now();
+
+    function receiveVideoFrame(buf) {
+      frameCount++;
+      const now = performance.now();
+      if (now - lastFpsTs >= 1000) {
+        fpsEl.textContent = frameCount + " fps";
+        frameCount = 0; lastFpsTs = now;
+      }
+
+      createImageBitmap(new Blob([buf], { type: "image/jpeg" }))
+        .then(bitmap => {
+          if (pendingBitmap) pendingBitmap.close(); // discard stale frame
+          pendingBitmap = bitmap;
+          if (!rafScheduled) {
+            rafScheduled = true;
+            requestAnimationFrame(paintFrame);
+          }
+        })
+        .catch(() => { });
+    }
+
+    function paintFrame() {
+      rafScheduled = false;
+      if (!pendingBitmap) return;
+      ctx2d.drawImage(pendingBitmap, 0, 0, SERVER_W, SERVER_H);
+      pendingBitmap.close();
+      pendingBitmap = null;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Session management
+    // ═══════════════════════════════════════════════════════════════════════════
     async function startSession() {
-      setStatus('connecting');
+      setStatus("connecting");
       startBtn.disabled = true;
-      platformSelect.disabled = true;
+      platformSel.disabled = true;
+
+      initAudio();
 
       try {
-        const platform = platformSelect.value;
-
-        // 1. Create session via REST (no device info needed!)
-        const baseUrl = SERVER_URL || window.location.origin;
-        const response = await fetch(baseUrl + "/start-session", {
+        const r = await fetch(SERVER_URL + "/start-session", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "ngrok-skip-browser-warning": "69420"
-          },
-          body: JSON.stringify({ platform: platform })
+          headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "1" },
+          body: JSON.stringify({ platform: platformSel.value }),
         });
+        if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
 
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${await response.text()}`);
-        }
-
-        const data = await response.json();
+        const data = await r.json();
         sessionId = data.sessionId;
 
-        console.log("Session created:", sessionId);
+        // Show which audio method the server is using
+        const methodLabels = { pulseaudio: "🎵 PulseAudio", none: "❌ No audio" };
+        audioMethodEl.textContent = methodLabels[data.audioMethod] || data.audioMethod;
+        if (data.audioMethod === "none") setAudioBanner("⚠ Server has no audio support (PulseAudio not found)", "#f85149");
 
-        // 2. Connect WebSocket
-        const wsProtocol = baseUrl.startsWith('https') ? 'wss' : 'ws';
-        const wsHost = baseUrl.replace(/^https?:\/\//, '');
-        ws = new WebSocket(`${wsProtocol}://${wsHost}`);
-        ws.binaryType = 'arraybuffer';
+        const proto = SERVER_URL.startsWith("https") ? "wss" : "ws";
+        const host = SERVER_URL.replace(/^https?:\/\//, "");
+        ws = new WebSocket(`${proto}://${host}`);
+        ws.binaryType = "arraybuffer";
 
-        ws.onopen = () => {
-          console.log("WebSocket connected");
+        ws.onopen = () => ws.send(JSON.stringify({ sessionId, type: "start-stream" }));
 
-          // 3. Request stream start
-          ws.send(JSON.stringify({
-            sessionId: sessionId,
-            type: "start-stream"
-          }));
-        };
-
-        ws.onmessage = (event) => {
-          if (event.data instanceof ArrayBuffer) {
-            renderFrame(event.data);
+        ws.onmessage = (evt) => {
+          if (evt.data instanceof ArrayBuffer) {
+            const type = new Uint8Array(evt.data)[0];
+            const payload = evt.data.slice(1);
+            if (type === 0x01) receiveVideoFrame(payload);
+            else if (type === 0x02) receiveAudioChunk(payload);
             return;
           }
-
-          try {
-            const msg = JSON.parse(event.data);
-            handleControlMessage(msg);
-          } catch (err) {
-            console.warn("Unparseable message:", event.data);
-          }
+          try { handleControl(JSON.parse(evt.data)); } catch { }
         };
 
-        ws.onclose = () => {
-          console.log("WebSocket disconnected");
-          setStatus('disconnected');
-          cleanupSession();
-        };
-
-        ws.onerror = (err) => {
-          console.error("WebSocket error:", err);
-          setStatus('disconnected');
-          cleanupSession();
-        };
+        ws.onclose = () => { setStatus("disconnected"); cleanup(); };
+        ws.onerror = () => { setStatus("disconnected"); cleanup(); };
 
       } catch (err) {
-        console.error("Failed to start session:", err);
-        setStatus('disconnected');
-        cleanupSession();
-        alert("Failed to start session: " + err.message);
+        console.error("[startSession]", err);
+        setStatus("disconnected");
+        cleanup();
+        alert("Failed to start: " + err.message);
       }
-    }
-
-    function cleanupSession() {
-      streaming = false;
-      startBtn.disabled = false;
-      platformSelect.disabled = false;
-      stopBtn.disabled = true;
     }
 
     function stopSession() {
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-          sessionId: sessionId,
-          type: "stop-stream"
-        }));
+      if (ws?.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ sessionId, type: "stop-stream" }));
         ws.close();
       }
-      overlay.classList.remove('hidden');
-      overlay.textContent = 'Session ended';
-      cleanupSession();
+      overlay.classList.remove("hidden");
+      overlay.textContent = "Session ended";
+      cleanup();
     }
 
-    // ===================== Frame Rendering =====================
-
-    function renderFrame(arrayBuffer) {
-      const blob = new Blob([arrayBuffer], { type: 'image/jpeg' });
-      createImageBitmap(blob).then(bitmap => {
-        // Draw to full server resolution (quality preserved)
-        ctx.drawImage(bitmap, 0, 0, SERVER_WIDTH, SERVER_HEIGHT);
-        bitmap.close();
-      }).catch(err => {
-        console.warn("Frame decode error:", err);
-      });
-
-      // FPS counter
-      frameCount++;
-      const now = performance.now();
-      if (now - lastFpsTime >= 1000) {
-        fpsDisplay.textContent = frameCount + ' fps';
-        frameCount = 0;
-        lastFpsTime = now;
-      }
+    function cleanup() {
+      streaming = false;
+      startBtn.disabled = false;
+      platformSel.disabled = false;
+      stopBtn.disabled = true;
+      scrollBar.style.display = "none";
+      stopAudio();
     }
 
-    function handleControlMessage(msg) {
+    function handleControl(msg) {
       switch (msg.type) {
-        case 'stream-started':
-          console.log("Stream started at", msg.width + "x" + msg.height);
-          setStatus('connected');
+        case "stream-started":
+          setStatus("connected");
           streaming = true;
-          overlay.classList.add('hidden');
+          overlay.classList.add("hidden");
           stopBtn.disabled = false;
+          scrollBar.style.display = "flex";
           break;
-        case 'stream-stopped':
-          console.log("Stream stopped");
+        case "stream-stopped":
           streaming = false;
           break;
-        case 'error':
-          console.error("Server error:", msg.message);
-          alert("Server error: " + msg.message);
+        case "session-ended":
+          overlay.classList.remove("hidden");
+          overlay.textContent = msg.message || "Session ended";
+          cleanup();
+          break;
+        case "error":
+          console.error("[Server error]", msg.message);
           break;
       }
     }
 
-    // ===================== Input Handling =====================
+    function setStatus(s) { statusDot.className = "status-dot " + s; }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Input forwarding
+    // ═══════════════════════════════════════════════════════════════════════════
     function sendInput(data) {
-      if (ws && ws.readyState === WebSocket.OPEN && sessionId) {
+      if (ws?.readyState === WebSocket.OPEN && sessionId) {
         ws.send(JSON.stringify({ sessionId, ...data }));
       }
     }
 
-    // --- Click ---
-    canvas.addEventListener("click", function (e) {
+    // ── Click ──────────────────────────────────────────────────────────────────
+    canvas.addEventListener("click", (e) => {
       if (!streaming) return;
-
-      // Get click position relative to canvas
+      e.preventDefault();
       const rect = canvas.getBoundingClientRect();
-
-      // Scale from display coordinates to server coordinates
-      const scaleX = SERVER_WIDTH / rect.width;
-      const scaleY = SERVER_HEIGHT / rect.height;
-
-      const x = (e.clientX - rect.left) * scaleX;
-      const y = (e.clientY - rect.top) * scaleY;
-
-      sendInput({ type: "click", x: Math.round(x), y: Math.round(y) });
+      sendInput({
+        type: "click",
+        x: Math.round((e.clientX - rect.left) * (SERVER_W / rect.width)),
+        y: Math.round((e.clientY - rect.top) * (SERVER_H / rect.height)),
+      });
     });
 
-    // --- Scroll ---
-    canvas.addEventListener("wheel", function (e) {
+    // ── Mouse wheel (desktop) ─────────────────────────────────────────────────
+    // Send EVERY tick immediately — no batching/debouncing.
+    // Normalise deltaMode so the remote always gets pixel values.
+    canvas.addEventListener("wheel", (e) => {
       e.preventDefault();
       if (!streaming) return;
-      sendInput({ type: "scroll", deltaX: e.deltaX, deltaY: e.deltaY });
+
+      let dx = e.deltaX, dy = e.deltaY;
+      if (e.deltaMode === 1) { dx *= 40; dy *= 40; }   // line → pixels
+      else if (e.deltaMode === 2) { dx *= 800; dy *= 800; }   // page → pixels
+
+      // Clamp per-tick to avoid teleporting on aggressive flicks
+      dx = Math.max(-400, Math.min(400, dx));
+      dy = Math.max(-400, Math.min(400, dy));
+
+      const rect = canvas.getBoundingClientRect();
+      sendInput({
+        type: "scroll",
+        x: Math.round((e.clientX - rect.left) * (SERVER_W / rect.width)),
+        y: Math.round((e.clientY - rect.top) * (SERVER_H / rect.height)),
+        deltaX: Math.round(dx),
+        deltaY: Math.round(dy),
+      });
     }, { passive: false });
 
-    // --- Keyboard ---
-    document.addEventListener('keydown', function (e) {
-      if (document.activeElement === document.getElementById('textInput') || !streaming) return;
+    // ── Touch (mobile / trackpad) ─────────────────────────────────────────────
+    let touchStartX = 0, touchStartY = 0, touchLastY = 0, touchStartTime = 0;
 
-      const key = e.key;
-      if (key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
-        sendInput({ type: "keypress", key: key });
+    canvas.addEventListener("touchstart", (e) => {
+      e.preventDefault();
+      const t = e.touches[0];
+      touchStartX = touchLastY = t.clientX;
+      touchStartY = touchLastY = t.clientY;
+      touchLastY = t.clientY;
+      touchStartTime = Date.now();
+    }, { passive: false });
+
+    canvas.addEventListener("touchmove", (e) => {
+      e.preventDefault();
+      if (!streaming) return;
+      const t = e.touches[0];
+      const dy = (touchLastY - t.clientY) * 2.5; // amplify for natural feel
+      touchLastY = t.clientY;
+      if (Math.abs(dy) < 1) return;
+
+      const rect = canvas.getBoundingClientRect();
+      sendInput({
+        type: "scroll",
+        x: Math.round((touchStartX - rect.left) * (SERVER_W / rect.width)),
+        y: Math.round(SERVER_H / 2),
+        deltaX: 0,
+        deltaY: Math.round(dy),
+      });
+    }, { passive: false });
+
+    canvas.addEventListener("touchend", (e) => {
+      e.preventDefault();
+      if (!streaming) return;
+      const t = e.changedTouches[0];
+      const dt = Date.now() - touchStartTime;
+      const dx = Math.abs(t.clientX - touchStartX);
+      const dy = Math.abs(t.clientY - touchStartY);
+      // Short tap = click
+      if (dt < 300 && dx < 12 && dy < 12) {
+        const rect = canvas.getBoundingClientRect();
+        sendInput({
+          type: "click",
+          x: Math.round((touchStartX - rect.left) * (SERVER_W / rect.width)),
+          y: Math.round((touchStartY - rect.top) * (SERVER_H / rect.height)),
+        });
+      }
+    }, { passive: false });
+
+    // ── On-screen scroll buttons ──────────────────────────────────────────────
+    // Clicking scrolls once; holding repeats every 80ms.
+    function makeScrollBtn(id, dy) {
+      const btn = document.getElementById(id);
+      let iv = null;
+      const fire = () => { if (streaming) sendInput({ type: "scroll", x: Math.round(SERVER_W / 2), y: Math.round(SERVER_H / 2), deltaX: 0, deltaY: dy }); };
+      const start = (e) => { e.preventDefault(); fire(); iv = setInterval(fire, 80); };
+      const stop = () => clearInterval(iv);
+      btn.addEventListener("mousedown", start);
+      btn.addEventListener("touchstart", start, { passive: false });
+      btn.addEventListener("mouseup", stop);
+      btn.addEventListener("mouseleave", stop);
+      btn.addEventListener("touchend", stop);
+    }
+    makeScrollBtn("scrollTopBtn", -3000);
+    makeScrollBtn("scrollUpBtn", -300);
+    makeScrollBtn("scrollDownBtn", 300);
+    makeScrollBtn("scrollBotBtn", 3000);
+
+    // ── Keyboard ──────────────────────────────────────────────────────────────
+    // Track last mouse position over canvas for scroll targeting
+    let lastMouseX = Math.round(SERVER_W / 2);
+    let lastMouseY = Math.round(SERVER_H / 2);
+    canvas.addEventListener("mousemove", (e) => {
+      const rect = canvas.getBoundingClientRect();
+      lastMouseX = Math.round((e.clientX - rect.left) * (SERVER_W / rect.width));
+      lastMouseY = Math.round((e.clientY - rect.top) * (SERVER_H / rect.height));
+    }, { passive: true });
+
+    document.addEventListener("keydown", (e) => {
+      if (document.activeElement === document.getElementById("textInput") || !streaming) return;
+
+      // Arrow keys → scroll instead of sending as keydown (more natural)
+      const scrollKeys = { ArrowDown: 120, ArrowUp: -120, PageDown: 600, PageUp: -600 };
+      if (scrollKeys[e.key] !== undefined) {
+        e.preventDefault();
+        sendInput({ type: "scroll", x: lastMouseX, y: lastMouseY, deltaX: 0, deltaY: scrollKeys[e.key] });
+        return;
+      }
+
+      e.preventDefault();
+      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+        sendInput({ type: "keypress", key: e.key });
       } else {
-        sendInput({ type: "keydown", key: key });
+        sendInput({ type: "keydown", key: e.key });
       }
     });
 
-    document.addEventListener('keyup', function (e) {
-      if (document.activeElement === document.getElementById('textInput') || !streaming) return;
-
-      if (e.key.length > 1) {
-        sendInput({ type: "keyup", key: e.key });
-      }
+    document.addEventListener("keyup", (e) => {
+      if (document.activeElement === document.getElementById("textInput") || !streaming) return;
+      if (e.key.length > 1) sendInput({ type: "keyup", key: e.key });
     });
 
     function sendText() {
-      const input = document.getElementById('textInput');
-      const text = input.value;
-      if (!text) return;
-
-      sendInput({ type: "type", text: text });
-      input.value = '';
+      const el = document.getElementById("textInput");
+      if (!el.value) return;
+      sendInput({ type: "type", text: el.value });
+      el.value = "";
     }
-
-    // ===================== Status =====================
-
-    function setStatus(state) {
-      statusDot.className = 'status-dot ' + state;
-    }
-
-  </script>
-
-  ws.onerror = (err) => {
-  console.error("WebSocket error:", err);
-  setStatus('disconnected');
-  cleanupSession();
-  };
-
-  } catch (err) {
-  console.error("Failed to start session:", err);
-  setStatus('disconnected');
-  cleanupSession();
-  alert("Failed to start session: " + err.message);
-  }
-  }
-
-  function cleanupSession() {
-  streaming = false;
-  startBtn.disabled = false;
-  platformSelect.disabled = false;
-  stopBtn.disabled = true;
-  }
-
-  function stopSession() {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-  ws.send(JSON.stringify({
-  sessionId: sessionId,
-  type: "stop-stream"
-  }));
-  ws.close();
-  }
-  overlay.classList.remove('hidden');
-  overlay.textContent = 'Session ended';
-  cleanupSession();
-  }
-
-  // ===================== Frame Rendering =====================
-
-  function renderFrame(arrayBuffer) {
-  const blob = new Blob([arrayBuffer], { type: 'image/jpeg' });
-  createImageBitmap(blob).then(bitmap => {
-  // Draw to full canvas resolution
-  ctx.drawImage(bitmap, 0, 0, REAL_WIDTH, REAL_HEIGHT);
-  bitmap.close();
-  }).catch(err => {
-  console.warn("Frame decode error:", err);
-  });
-
-  // FPS counter
-  frameCount++;
-  const now = performance.now();
-  if (now - lastFpsTime >= 1000) {
-  fpsDisplay.textContent = frameCount + ' fps';
-  frameCount = 0;
-  lastFpsTime = now;
-  }
-  }
-
-  function handleControlMessage(msg) {
-  switch (msg.type) {
-  case 'stream-started':
-  console.log("Stream started:", msg);
-  setStatus('connected');
-  streaming = true;
-  overlay.classList.add('hidden');
-  stopBtn.disabled = false;
-  break;
-  case 'stream-stopped':
-  console.log("Stream stopped");
-  streaming = false;
-  break;
-  case 'error':
-  console.error("Server error:", msg.message);
-  alert("Server error: " + msg.message);
-  break;
-  }
-  }
-
-  // ===================== Input Handling =====================
-
-  function sendInput(data) {
-  if (ws && ws.readyState === WebSocket.OPEN && sessionId) {
-  ws.send(JSON.stringify({ sessionId, ...data }));
-  }
-  }
-
-  // --- Click ---
-  canvas.addEventListener("click", function (e) {
-  if (!streaming) return;
-
-  // Get click position relative to the canvas element
-  const rect = canvas.getBoundingClientRect();
-
-  // Scale factor: internal resolution / display size
-  const scaleX = REAL_WIDTH / rect.width;
-  const scaleY = REAL_HEIGHT / rect.height;
-
-  const x = (e.clientX - rect.left) * scaleX;
-  const y = (e.clientY - rect.top) * scaleY;
-
-  sendInput({ type: "click", x: Math.round(x), y: Math.round(y) });
-  });
-
-  // --- Scroll ---
-  canvas.addEventListener("wheel", function (e) {
-  e.preventDefault();
-  if (!streaming) return;
-  sendInput({ type: "scroll", deltaX: e.deltaX, deltaY: e.deltaY });
-  }, { passive: false });
-
-  // --- Keyboard ---
-  document.addEventListener('keydown', function (e) {
-  if (document.activeElement === document.getElementById('textInput') || !streaming) return;
-
-  const key = e.key;
-  if (key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
-  sendInput({ type: "keypress", key: key });
-  } else {
-  sendInput({ type: "keydown", key: key });
-  }
-  });
-
-  document.addEventListener('keyup', function (e) {
-  if (document.activeElement === document.getElementById('textInput') || !streaming) return;
-
-  // Only send keyup for modifiers/special keys to reduce traffic
-  if (e.key.length > 1) {
-  sendInput({ type: "keyup", key: e.key });
-  }
-  });
-
-  function sendText() {
-  const input = document.getElementById('textInput');
-  const text = input.value;
-  if (!text) return;
-
-  sendInput({ type: "type", text: text });
-  input.value = '';
-  }
-
-  // ===================== Status =====================
-
-  function setStatus(state) {
-  statusDot.className = 'status-dot ' + state;
-  }
-
   </script>
 </body>
 

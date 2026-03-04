@@ -14,7 +14,8 @@ async function initBrowser() {
       '--disable-dev-shm-usage', // Extremely important to prevent out-of-memory crashes when multiple users connect
       '--disable-gpu',           // Helps reduce memory consumption for headless loads
       '--no-zygote',
-      '--lang=en-US'        // Force browser UI language to English
+      '--lang=en-US',        // Force browser UI language to English
+      '--autoplay-policy=no-user-gesture-required'
     ]
   });
 

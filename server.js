@@ -1,8 +1,7 @@
 const express = require("express");
 const { WebSocketServer } = require("ws");
 const path = require("path");
-const { initBrowser, getBrowser } = require("./browserManager");
-const { devices } = require("playwright");
+const { chromium } = require("playwright");
 const {
   createSession,
   getSession,
@@ -10,175 +9,234 @@ const {
   deleteSession,
   cleanupIdleSessions,
 } = require("./sessionStore");
-const { startScreencast, stopScreencast } = require("./streamManager");
+const {
+  startScreencast,
+  stopScreencast,
+  startAudioStream,
+} = require("./streamManager");
 const { handleInput } = require("./inputHandler");
 const { v4: uuidv4 } = require("uuid");
 const cors = require("cors");
+
+const os = require("os");
+const IS_WINDOWS = os.platform() === "win32";
+
+const DISPLAY = process.env.DISPLAY || ":1";
+const XDG_RUNTIME_DIR =
+  process.env.XDG_RUNTIME_DIR ||
+  `/run/user/${process.getuid ? process.getuid() : 1000}`;
+const PULSE_SERVER =
+  process.env.PULSE_SERVER || `unix:${XDG_RUNTIME_DIR}/pulse/native`;
+
+console.log(`[Server] Platform: ${os.platform()} | DISPLAY=${DISPLAY}`);
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Serve the client HTML
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "client.html"));
-});
+app.get("/", (req, res) => res.sendFile(path.join(__dirname, "client.html")));
 
-(async () => {
-  await initBrowser();
-})();
+// ─────────────────────────────────────────────────────────────────────────────
+const ALLOWED = {
+  facebook: "https://www.facebook.com/",
+  instagram: "https://www.instagram.com/",
+  x: "https://x.com/",
+  tiktok: "https://www.tiktok.com/",
+  linkedin: "https://www.linkedin.com/",
+  discord: "https://discord.com/",
+  messenger: "https://www.messenger.com/",
+  telegram: "https://web.telegram.org/",
+};
 
+const MOBILE_WIDTH = 360;
+const MOBILE_HEIGHT = 780;
+
+// Chromium args
+const CHROMIUM_ARGS = [
+  "--no-sandbox",
+  "--disable-setuid-sandbox",
+  "--disable-background-timer-throttling",
+  "--disable-backgrounding-occluded-windows",
+  "--disable-renderer-backgrounding",
+  "--disable-dev-shm-usage",
+  "--disable-gpu",
+  "--no-zygote",
+  "--lang=en-US",
+  "--autoplay-policy=no-user-gesture-required",
+  ...(IS_WINDOWS ? [
+    // Windows: audio runs in-process, uses the default Windows audio device
+    "--disable-features=AudioServiceOutOfProcess",
+    "--audio-output-channels=2",
+  ] : [
+    // Linux: keep audio in-process so PULSE_SINK env var is respected
+    "--disable-features=AudioServiceOutOfProcess",
+    "--disable-features=WebRtcPipeWireCapturer",
+    "--audio-output-channels=2",
+  ]),
+];
+
+// Context options shared by both launches
+const CTX_OPTIONS = {
+  viewport: { width: MOBILE_WIDTH, height: MOBILE_HEIGHT },
+  deviceScaleFactor: 2,
+  locale: "en-US",
+  extraHTTPHeaders: { "Accept-Language": "en-US,en;q=0.9" },
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /start-session
+// ─────────────────────────────────────────────────────────────────────────────
 app.post("/start-session", async (req, res) => {
-  let context, page;
+  let browser, context, page, audioSession;
+
   try {
     const { platform } = req.body;
-    console.log(`\n--- New Flow: Start Session ---`);
-    console.log(`[API] /start-session requested for platform: ${platform}`);
-
-    const allowed = {
-      facebook: "https://www.facebook.com/",
-      instagram: "https://www.instagram.com",
-      x: "https://x.com/",
-      tiktok: "https://www.tiktok.com",
-      linkedin: "https://www.linkedin.com",
-    };
-
-    if (!allowed[platform]) {
+    if (!ALLOWED[platform])
       return res.status(400).json({ error: "Platform not allowed" });
-    }
 
-    const browser = getBrowser();
+    const sessionId = uuidv4();
+    console.log(`\n[Session] Starting ${sessionId} — platform: ${platform}`);
 
-    // Mobile-optimized viewport (iPhone 13 standard)
-    const MOBILE_WIDTH = 390;
-    const MOBILE_HEIGHT = 844;
+    // ── 1. Create audio session (sets up PulseAudio sink) ─────────────────
+    audioSession = await startAudioStream(sessionId);
+    console.log(
+      `[Session] Audio method: ${audioSession.method} | sink: ${audioSession.sinkName}`,
+    );
 
-    context = await browser.newContext({
-      viewport: { width: MOBILE_WIDTH, height: MOBILE_HEIGHT },
-      deviceScaleFactor: 2, // Simulate Retina display
-      locale: "en-US",
-      extraHTTPHeaders: {
-        "Accept-Language": "en-US,en;q=0.9",
+    // ── 2. Launch browser — route audio to our dedicated sink ────────────
+    browser = await chromium.launch({
+      headless: true,
+      env: {
+        ...process.env,
+        ...(IS_WINDOWS ? {} : {
+          // Linux: route audio to our dedicated PulseAudio null-sink
+          DISPLAY,
+          XDG_RUNTIME_DIR,
+          PULSE_SERVER,
+          PULSE_SINK: audioSession.sinkName,
+        }),
       },
+      args: CHROMIUM_ARGS,
     });
 
+    context = await browser.newContext(CTX_OPTIONS);
     page = await context.newPage();
 
-    // Set a timeout for navigation to prevent hanging
-    await page.goto(allowed[platform], {
+    // ── 3. Navigate ────────────────────────────────────────────────────────
+    await page.goto(ALLOWED[platform], {
       waitUntil: "domcontentloaded",
       timeout: 30000,
     });
 
-    // Inject CSS to slightly brighten the page and increase contrast, making dull sites "pop" on mobile streams
+    // Wait 2s then move any Chromium audio streams to our sink
+    setTimeout(async () => {
+      if (audioSession.reroute) await audioSession.reroute();
+    }, 2000);
+
+    // await new Promise((r) => setTimeout(r, 2000));
+    // await audioSession.reroute();
+
+    // ── 4. Inject: auto-unmute all media + visual boost ───────────────────
     await page
-      .addStyleTag({
-        content:
-          "html { filter: brightness(1.1) contrast(1.05) saturate(1.1) !important; }",
+      .addInitScript(() => {
+        // Force-unmute every audio/video element as soon as it appears
+        function unmute(el) {
+          try {
+            el.muted = false;
+            el.volume = 1.0;
+          } catch (e) {}
+        }
+
+        // Unmute existing elements
+        document.querySelectorAll("audio,video").forEach(unmute);
+
+        // Unmute future elements
+        new MutationObserver((mutations) => {
+          for (const m of mutations) {
+            for (const node of m.addedNodes) {
+              if (node.nodeName === "AUDIO" || node.nodeName === "VIDEO") {
+                // Small delay to let the element initialise
+                setTimeout(() => unmute(node), 50);
+              }
+            }
+          }
+        }).observe(document.documentElement, {
+          childList: true,
+          subtree: true,
+        });
       })
       .catch(() => {});
 
-    const sessionId = uuidv4();
+    await page
+      .addStyleTag({
+        content: "html { filter: brightness(1.08) contrast(1.04) !important; }",
+      })
+      .catch(() => {});
+
+    // ── 5. Register session ────────────────────────────────────────────────
     createSession(sessionId, context, page, {
       width: MOBILE_WIDTH,
       height: MOBILE_HEIGHT,
+      browser,
+      audioSession,
     });
+
+    console.log(`[Session] Ready: ${sessionId}`);
 
     res.json({
       sessionId,
       width: MOBILE_WIDTH,
       height: MOBILE_HEIGHT,
-      quality: 100,
-      format: "jpeg",
+      audioMethod: audioSession.method,
     });
-    console.log(
-      `[API] Session created: ${sessionId} | Viewport: ${MOBILE_WIDTH}x${MOBILE_HEIGHT} | Quality: 100 (high fidelity)`,
-    );
-  } catch (error) {
-    console.error(`[API] Error starting session:`, error.message);
+  } catch (err) {
+    console.error("[/start-session] Fatal error:", err.message);
     if (page) await page.close().catch(() => {});
     if (context) await context.close().catch(() => {});
+    if (browser) await browser.close().catch(() => {});
+    if (audioSession) await audioSession.stop().catch(() => {});
     res
       .status(500)
-      .json({ error: "Failed to start session", details: error.message });
+      .json({ error: "Failed to start session", details: err.message });
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /end-session
+// ─────────────────────────────────────────────────────────────────────────────
 app.post("/end-session", async (req, res) => {
   try {
     const { sessionId } = req.body;
-    console.log(`\n--- New Flow: End Session ---`);
-    console.log(`[API] /end-session requested for sessionId: ${sessionId}`);
-    const session = getSession(sessionId);
-
-    if (session) {
-      if (session.ws && session.ws.readyState === session.ws.OPEN) {
-        session.ws.send(
-          JSON.stringify({
-            type: "session-ended",
-            message: "Session time exhausted",
-          }),
-        );
-      }
-
-      // Give a small delay for message to send before closing everything?
-      // User said "after some seconds close that instance of the browser used"
-      // But for simplicity/robustness, we can just close resources. The message should go through.
-
-      if (session.page)
-        await session.page
-          .close()
-          .catch((e) => console.error("Error closing page:", e));
-      if (session.context)
-        await session.context
-          .close()
-          .catch((e) => console.error("Error closing context:", e));
-      deleteSession(sessionId);
-    }
-
+    await deleteSession(sessionId); // sessionStore handles full teardown
     res.json({ success: true });
-  } catch (error) {
-    console.error(error);
+  } catch (err) {
+    console.error("[/end-session]", err);
     res.status(500).json({ error: "Failed to end session" });
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// HTTP + WebSocket
+// ─────────────────────────────────────────────────────────────────────────────
 const server = app.listen(3000, () => {
   console.log("Server running on http://localhost:3000");
-
-  // Cleanup idle sessions every minute
-  // Max idle time: 5 minutes (300,000 ms)
-  setInterval(async () => {
-    try {
-      await cleanupIdleSessions(300000);
-    } catch (err) {
-      console.error("Error during periodic cleanup:", err);
-    }
-  }, 60000);
+  // Idle cleanup every 60s — kill sessions idle for 5 min
+  setInterval(() => cleanupIdleSessions(300_000).catch(console.error), 60_000);
 });
 
 const wss = new WebSocketServer({ server });
 
 wss.on("connection", (ws, req) => {
-  const ip = req.socket.remoteAddress;
-  console.log(`\n--- New Flow: WebSocket Connection ---`);
-  console.log(`[WebSocket] Client connected from ${ip}`);
+  console.log(`[WS] Client connected: ${req.socket.remoteAddress}`);
 
-  ws.on("message", async (message) => {
-    // Check if it's binary (shouldn't be from client, but handle gracefully)
-    if (Buffer.isBuffer(message) && message[0] !== 0x7b) {
-      return;
-    }
+  ws.on("message", async (raw) => {
+    // Ignore non-JSON binary blobs
+    if (Buffer.isBuffer(raw) && raw[0] !== 0x7b) return;
 
     let data;
     try {
-      data = JSON.parse(message.toString());
-      console.log(
-        `[WebSocket] Received message from client (type: ${data.type}):`,
-        data,
-      );
-    } catch (err) {
-      console.error("Invalid JSON message:", err.message);
+      data = JSON.parse(raw.toString());
+    } catch {
       return;
     }
 
@@ -188,57 +246,36 @@ wss.on("connection", (ws, req) => {
       return;
     }
 
-    // --- Stream Control ---
+    // ── start-stream ───────────────────────────────────────────────────────
     if (data.type === "start-stream") {
-      // Store the WebSocket reference in the session
       updateSession(data.sessionId, { ws });
 
+      // Send buffered WebM header + early audio chunks to the new client
+      session.audioSession?.flushAudio(ws);
+
       try {
-        // Retrieve the actual viewport size from the page/context if possible, or use hardcoded mobile defaults
-        // Since we set viewport in newContext, we should use that.
-        // For now, we know it's mobile (390x844) based on our implementation, but let's be robust.
-        // We'll pass the resolution that matches the desired output.
-
-        // Mobile-optimized streaming options
-        // 390x844 is the average/standard mobile viewport (iPhone 13 standard)
-        const streamOptions = {
-          maxWidth: 390,
-          maxHeight: 844,
-          quality: 100, // Maximum quality for best visual fidelity in mobile app
-          everyNthFrame: 1,
-        };
-
         const cdpSession = await startScreencast(
           session.page,
-          (frameBuffer, metadata) => {
-            // Send frame as binary WebSocket message
-            console.log(
-              `[WebSocket] Checking connection before send - ws.readyState: ${ws.readyState}, ws.OPEN: ${ws.OPEN}, typeof ws.send: ${typeof ws.send}`,
-            );
+          (frameBuffer) => {
             if (ws.readyState === 1) {
-              // 1 is WebSocket.OPEN
-              ws.send(frameBuffer, { binary: true });
-              console.log(
-                `[WebSocket] Rendered view (frame) sent back to client. Size: ${frameBuffer.length} bytes`,
-              );
+              ws.send(Buffer.concat([Buffer.from([0x01]), frameBuffer]), {
+                binary: true,
+              });
             }
           },
-          streamOptions,
+          { maxWidth: MOBILE_WIDTH, maxHeight: MOBILE_HEIGHT, quality: 70 },
         );
 
         updateSession(data.sessionId, { cdpSession });
-
         ws.send(
           JSON.stringify({
             type: "stream-started",
-            width: session.viewport?.width || 390,
-            height: session.viewport?.height || 844,
+            width: MOBILE_WIDTH,
+            height: MOBILE_HEIGHT,
           }),
         );
-
-        console.log(`Screencast started for session ${data.sessionId}`);
       } catch (err) {
-        console.error("Failed to start screencast:", err);
+        console.error("[WS] Screencast start failed:", err);
         ws.send(
           JSON.stringify({ type: "error", message: "Failed to start stream" }),
         );
@@ -246,6 +283,7 @@ wss.on("connection", (ws, req) => {
       return;
     }
 
+    // ── stop-stream ────────────────────────────────────────────────────────
     if (data.type === "stop-stream") {
       if (session.cdpSession) {
         await stopScreencast(session.cdpSession);
@@ -255,26 +293,11 @@ wss.on("connection", (ws, req) => {
       return;
     }
 
-    if (data.type === "ping") {
-      // Just respond to keep connection alive, or do nothing.
-      // We don't need to log this every 10s as it clutters the terminal.
-      return;
-    }
+    if (data.type === "ping") return;
 
-    // --- Input Events ---
-    // All other message types are treated as input events
+    // ── input events ───────────────────────────────────────────────────────
     await handleInput(session.page, data);
   });
 
-  ws.on("close", async () => {
-    console.log(
-      `WebSocket client disconnected for session: ${data ? data.sessionId : "unknown"}`,
-    );
-    // If we wanted to clean up immediately on disconnect, we could call deleteSession here.
-    // For now, we rely on the idle timeout (cleanupIdleSessions) to allow for re-connection.
-  });
-
-  ws.on("error", (err) => {
-    console.error("WebSocket error:", err.message);
-  });
+  ws.on("error", (err) => console.error("[WS] Error:", err.message));
 });

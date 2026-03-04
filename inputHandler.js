@@ -1,135 +1,155 @@
 /**
- * Input Handler - Processes input events from the client and applies them to the Playwright page.
+ * Input Handler
+ * Translates WebSocket input events into Playwright page actions.
  */
 
-/**
- * Handle a click event.
- * @param {import('playwright').Page} page
- * @param {{ x: number, y: number, button?: string }} data
- */
 async function handleClick(page, data) {
-  const button = data.button === 'right' ? 'right' : 'left';
-  await page.mouse.click(data.x, data.y, { button });
+  await page.mouse.click(data.x, data.y, {
+    button: data.button === "right" ? "right" : "left",
+  });
 }
 
-/**
- * Handle typing a string of text.
- * @param {import('playwright').Page} page
- * @param {{ text: string }} data
- */
 async function handleType(page, data) {
   await page.keyboard.type(data.text);
 }
 
-/**
- * Handle a key down event.
- * @param {import('playwright').Page} page
- * @param {{ key: string }} data
- */
 async function handleKeyDown(page, data) {
   await page.keyboard.down(data.key);
 }
 
-/**
- * Handle a key up event.
- * @param {import('playwright').Page} page
- * @param {{ key: string }} data
- */
 async function handleKeyUp(page, data) {
   await page.keyboard.up(data.key);
 }
 
-/**
- * Handle a key press (down + up).
- * @param {import('playwright').Page} page
- * @param {{ key: string }} data
- */
 async function handleKeyPress(page, data) {
   await page.keyboard.press(data.key);
 }
 
-/**
- * Handle mouse scroll.
- * @param {import('playwright').Page} page
- * @param {{ deltaX?: number, deltaY: number }} data
- */
-async function handleScroll(page, data) {
-  await page.mouse.wheel(data.deltaX || 0, data.deltaY);
-}
-
-/**
- * Handle mouse move.
- * @param {import('playwright').Page} page
- * @param {{ x: number, y: number }} data
- */
 async function handleMouseMove(page, data) {
   await page.mouse.move(data.x, data.y);
 }
 
-/**
- * Handle a specific key action like Enter or Backspace.
- * @param {import('playwright').Page} page
- * @param {{ key: string }} data
- */
 async function handleKey(page, data) {
-  if (data.key === 'backspace') {
-    await page.keyboard.press('Backspace');
-  } else if (data.key === 'enter') {
-    await page.keyboard.press('Enter');
-  } else {
-    // Attempt to press the key directly if it's something else
-    try {
-      await page.keyboard.press(data.key);
-    } catch(e) {}
-  }
+  const k = data.key.toLowerCase();
+  const mapped =
+    k === "backspace" ? "Backspace" : k === "enter" ? "Enter" : data.key;
+  try {
+    await page.keyboard.press(mapped);
+  } catch {}
 }
 
 /**
- * Route an input event to the appropriate handler.
- * @param {import('playwright').Page} page
- * @param {object} data - The parsed input event
+ * Three-layer scroll strategy:
+ *
+ * Layer 1 — page.mouse.move + page.mouse.wheel
+ *   Moves the mouse to the target coordinates first (critical — wheel fires at
+ *   the last mouse position, which is (0,0) if the mouse was never moved).
+ *   Works for standard overflow containers.
+ *
+ * Layer 2 — WheelEvent dispatch via page.evaluate
+ *   Dispatches a native WheelEvent on the element under the pointer.
+ *   Catches React/Vue synthetic scroll handlers used by Instagram, TikTok, etc.
+ *
+ * Layer 3 — scrollBy on the nearest scrollable ancestor
+ *   Walks up the DOM from the target element and calls .scrollBy() on the first
+ *   ancestor with overflow:auto/scroll/overlay and scrollable content.
+ *   Most reliable catch-all for custom scroll containers.
  */
+async function handleScroll(page, data) {
+  const dx = data.deltaX || 0;
+  const dy = data.deltaY || 0;
+  // Use provided coordinates or default to viewport centre
+  const x = typeof data.x === "number" ? data.x : 195;
+  const y = typeof data.y === "number" ? data.y : 422;
+
+  // Layer 1: position mouse then fire CDP wheel
+  await page.mouse.move(x, y);
+  await page.mouse.wheel(dx, dy);
+
+  // Layers 2 & 3: JS-level scroll
+  await page.evaluate(
+    ({ x, y, dx, dy }) => {
+      // Layer 2: synthetic WheelEvent (React/Vue handlers)
+      const target = document.elementFromPoint(x, y);
+      if (target) {
+        target.dispatchEvent(
+          new WheelEvent("wheel", {
+            deltaX: dx,
+            deltaY: dy,
+            deltaMode: 0,
+            bubbles: true,
+            cancelable: true,
+            clientX: x,
+            clientY: y,
+          }),
+        );
+      }
+
+      // Layer 3: direct .scrollBy on nearest scrollable ancestor
+      function findScrollable(el) {
+        if (!el || el === document.body || el === document.documentElement)
+          return null;
+        const { overflowY } = window.getComputedStyle(el);
+        if (
+          (overflowY === "auto" ||
+            overflowY === "scroll" ||
+            overflowY === "overlay") &&
+          el.scrollHeight > el.clientHeight
+        )
+          return el;
+        return findScrollable(el.parentElement);
+      }
+
+      const scrollable = target ? findScrollable(target) : null;
+      if (scrollable) {
+        scrollable.scrollBy({ top: dy, left: dx, behavior: "auto" });
+      } else {
+        window.scrollBy({ top: dy, left: dx, behavior: "auto" });
+      }
+    },
+    { x, y, dx, dy },
+  );
+}
+
 async function handleInput(page, data) {
-  console.log('Input received:', data);
-  
   try {
-    // Normalize casing for backspace and enter so mobile apps sending 'backspace' work perfectly
+    // Normalise key names
     if (data.key) {
-      const lowerKey = data.key.toLowerCase();
-      if (lowerKey === 'backspace') data.key = 'Backspace';
-      else if (lowerKey === 'enter') data.key = 'Enter';
+      const lk = data.key.toLowerCase();
+      if (lk === "backspace") data.key = "Backspace";
+      else if (lk === "enter") data.key = "Enter";
     }
 
     switch (data.type) {
-      case 'click':
+      case "click":
         await handleClick(page, data);
         break;
-      case 'type':
+      case "type":
         await handleType(page, data);
         break;
-      case 'key':
+      case "key":
         await handleKey(page, data);
         break;
-      case 'keydown':
+      case "keydown":
         await handleKeyDown(page, data);
         break;
-      case 'keyup':
+      case "keyup":
         await handleKeyUp(page, data);
         break;
-      case 'keypress':
+      case "keypress":
         await handleKeyPress(page, data);
         break;
-      case 'scroll':
+      case "scroll":
         await handleScroll(page, data);
         break;
-      case 'mousemove':
+      case "mousemove":
         await handleMouseMove(page, data);
         break;
       default:
-        console.warn('Unknown input type:', data.type);
+        console.warn("[Input] Unknown type:", data.type);
     }
   } catch (err) {
-    console.error(`Input handler error (${data.type}):`, err.message);
+    console.error(`[Input] Error (${data.type}):`, err.message);
   }
 }
 
