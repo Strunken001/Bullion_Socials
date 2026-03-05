@@ -11,11 +11,9 @@ async function initBrowser() {
       '--disable-background-timer-throttling',
       '--disable-backgrounding-occluded-windows',
       '--disable-renderer-backgrounding',
-      '--disable-dev-shm-usage', // Extremely important to prevent out-of-memory crashes when multiple users connect
-      '--disable-gpu',           // Helps reduce memory consumption for headless loads
+      '--disable-dev-shm-usage',
       '--no-zygote',
-      '--lang=en-US',        // Force browser UI language to English
-      '--autoplay-policy=no-user-gesture-required'
+      '--lang=en-US'
     ]
   });
 
