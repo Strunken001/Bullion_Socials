@@ -2,13 +2,8 @@
  * Stream Manager
  * VIDEO : CDP Page.startScreencast → JPEG → WebSocket (0x01)
  * AUDIO : Cross-platform
- *   Windows → FFmpeg WASAPI loopback (virtual cable or default render device)
+ *   Windows → FFmpeg dshow (Stereo Mix / VB-Cable loopback)
  *   Linux   → PulseAudio null-sink → FFmpeg → WebSocket (0x02)
- *
- *   By default we encode as WebM/Opus because it's efficient and supported in
- *   desktop browsers.  For mobile clients that lack WebM support we can
- *   instead ask FFmpeg for AAC (fragmented MP4) or MP3; the codec is chosen by
- *   passing an "audioCodec" parameter to start-session.
  */
 
 const { spawn, execFile } = require("child_process");
@@ -61,8 +56,7 @@ async function stopScreencast(cdpSession) {
 
 // ── AUDIO ─────────────────────────────────────────────────────────────────────
 
-async function startAudioStream(sessionId, codec = 'opus') {
-  // codec: 'opus' | 'aac' | 'mp3' (defaults to opus)
+async function startAudioStream(sessionId, codec = "opus") {
   if (IS_WINDOWS) {
     return startAudioStreamWindows(sessionId, codec);
   } else {
@@ -71,13 +65,15 @@ async function startAudioStream(sessionId, codec = 'opus') {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// WINDOWS: FFmpeg WASAPI loopback capture
+// WINDOWS: FFmpeg DirectShow loopback capture
 // ══════════════════════════════════════════════════════════════════════════════
-async function startAudioStreamWindows(sessionId, codec = 'opus') {
+async function startAudioStreamWindows(sessionId, codec = "opus") {
   const tag = `[Audio:${sessionId.slice(0, 8)}]`;
-  console.log(`\n${tag} ══════ Starting Windows audio pipeline (codec=${codec}) ══════`);
+  console.log(
+    `\n${tag} ══════ Starting Windows audio pipeline (codec=${codec}) ══════`
+  );
 
-  // 1. Verify ffmpeg is available
+  // 1. Verify ffmpeg
   let ffmpegPath = "ffmpeg";
   try {
     const { stdout } = await execFileAsync("where", ["ffmpeg"]);
@@ -85,77 +81,145 @@ async function startAudioStreamWindows(sessionId, codec = 'opus') {
     console.log(`${tag}   ✓ FFmpeg found: ${ffmpegPath}`);
   } catch {
     console.error(`${tag}   ✗ FFmpeg not found in PATH.`);
-    console.error(`${tag}     Download: https://www.gyan.dev/ffmpeg/builds/`);
-    console.error(`${tag}     Extract to C:\\ffmpeg and add C:\\ffmpeg\\bin to PATH`);
     return makeNoopSession(sessionId, "windows", "ffmpeg not found in PATH");
   }
 
-  // 2. List WASAPI devices to find the right loopback source
-  //    We look for a "VB-Audio" or "CABLE" device first (virtual cable),
-  //    then fall back to the default WASAPI loopback on the render device.
+  // 2. List ALL DirectShow audio devices (capture + render)
+  //    We look for loopback/Stereo Mix/VB-Cable devices.
   let audioDevice = null;
-  let useLoopback = true;
 
   try {
-    const { stderr } = await execFileAsync(ffmpegPath, [
+    // FFmpeg lists dshow devices by intentionally failing with -i dummy
+    // The full device list comes out on stderr
+    const result = await execFileAsync(ffmpegPath, [
       "-list_devices", "true",
       "-f", "dshow",
       "-i", "dummy",
-    ]).catch(e => ({ stderr: e.stderr || e.stdout || "" }));
+    ]).catch((e) => ({ stderr: e.stderr || e.stdout || "" }));
 
-    const lines = (stderr || "").split("\n");
-    console.log(`${tag}   Available DirectShow audio devices:`);
+    const raw = result.stderr || "";
+    console.log(`${tag}   Raw FFmpeg device output:\n${raw.split("\n").slice(0,30).join("\n")}`);
 
-    // Find a VB-Cable or virtual cable device
-    for (const line of lines) {
-      if (line.includes("dshow") && line.toLowerCase().includes("audio")) {
-        const match = line.match(/"([^"]+)"/);
-        if (match) {
-          const name = match[1];
-          console.log(`${tag}     - ${name}`);
-          // Prefer VB-Cable, CABLE Output, or Stereo Mix
-          if (!audioDevice && (
-            name.toLowerCase().includes("cable") ||
-            name.toLowerCase().includes("vb-audio") ||
-            name.toLowerCase().includes("virtual") ||
-            name.toLowerCase().includes("stereo mix") ||
-            name.toLowerCase().includes("what u hear")
-          )) {
-            audioDevice = name;
-            useLoopback = false;
-            console.log(`${tag}   ✓ Selected virtual audio device: "${name}"`);
-          }
-        }
+    // Strategy: collect ALL quoted strings from the ENTIRE output,
+    // then filter to audio-related ones. This is more robust than trying
+    // to parse FFmpeg's section headers which change between versions.
+    const allQuoted = [];
+    for (const line of raw.split("\n")) {
+      const m = line.match(/"([^"]{2,})"/);
+      if (m) allQuoted.push(m[1]);
+    }
+
+    console.log(`${tag}   All quoted names found: ${JSON.stringify(allQuoted)}`);
+
+    // Priority order for loopback/capture devices
+    const PRIORITY = [
+      "cable output",
+      "vb-audio",
+      "vb-cable",
+      "virtual cable",
+      "stereo mix",
+      "what u hear",
+      "wave out mix",
+    ];
+
+    // First pass: find a preferred loopback device
+    for (const keyword of PRIORITY) {
+      const match = allQuoted.find((n) => n.toLowerCase().includes(keyword));
+      if (match) {
+        audioDevice = match;
+        console.log(`${tag}   ✓ Selected loopback device: "${audioDevice}"`);
+        break;
       }
+    }
+
+    // Second pass: if nothing matched, use any non-video quoted name that
+    // isn't a file path or codec name (heuristic: contains a space or "mix")
+    if (!audioDevice) {
+      const fallback = allQuoted.find((n) =>
+        n.includes(" ") &&
+        !n.toLowerCase().includes("video") &&
+        !n.toLowerCase().includes("camera") &&
+        !n.toLowerCase().includes("webcam") &&
+        n.length > 4
+      );
+      if (fallback) {
+        audioDevice = fallback;
+        console.warn(`${tag}   ⚠ Using fallback audio device: "${audioDevice}"`);
+      }
+    }
+
+    if (audioDevice) {
+      console.log(`${tag}   DirectShow audio devices found:`);
+      allQuoted.forEach(n => console.log(`${tag}     "${n}"`));
     }
   } catch (e) {
     console.warn(`${tag}   Could not list DirectShow devices: ${e.message}`);
   }
 
-  // 3. Build FFmpeg args based on what we found
+  if (!audioDevice) {
+    console.error(`${tag}   ✗ No audio capture device found!`);
+    console.error(
+      `${tag}     Fix options (choose one):`
+    );
+    console.error(
+      `${tag}     1. Install VB-Cable: https://vb-audio.com/Cable/`
+    );
+    console.error(
+      `${tag}        Set "CABLE Input" as Default Playback Device`
+    );
+    console.error(
+      `${tag}        Set "CABLE Output" as Default Recording Device`
+    );
+    console.error(
+      `${tag}     2. Enable Stereo Mix: right-click speaker → Sounds`
+    );
+    console.error(
+      `${tag}        → Recording tab → right-click empty area → Show Disabled Devices`
+    );
+    console.error(
+      `${tag}        → right-click "Stereo Mix" → Enable → Set as Default`
+    );
+    return makeNoopSession(sessionId, "windows", "no audio capture device");
+  }
+
+  // 3. Build FFmpeg args — always use dshow (correct Windows loopback method)
+  //    WASAPI loopback via -f wasapi uses a different, less-reliable syntax on
+  //    modern FFmpeg builds; dshow + Stereo Mix / VB-Cable is the safe path.
   let ffmpegArgs;
 
-  const inputArgs = audioDevice && !useLoopback
-    ? ["-f", "dshow", "-i", `audio=${audioDevice}`]
-    : ["-f", "wasapi", ...(!audioDevice ? ["-loopback", "1"] : []), "-i", audioDevice || "default"];
+  // Use WASAPI for capturing VB-Cable — more reliable than dshow for virtual
+  // audio devices on Windows. The device name format for WASAPI is just the
+  // plain device name without the "audio=" prefix.
+  // We try WASAPI first, fall back to dshow if it fails.
+  const inputArgs = [
+    "-f", "dshow",
+    "-audio_buffer_size", "50",
+    "-i", `audio=${audioDevice}`,
+  ];
 
-  if (codec === 'aac' || codec === 'mp3') {
-    // choose AAC in fragmented MP4 or MP3
-    const codecName = codec === 'aac' ? 'aac' : 'libmp3lame';
-    const format = codec === 'aac' ? 'mp4' : 'mp3';
+  if (codec === "aac") {
     ffmpegArgs = [
       "-loglevel", "info",
       ...inputArgs,
-      "-c:a", codecName,
+      "-c:a", "aac",
       "-b:a", "64k",
-      "-f", format,
+      "-f", "mp4",
+      "-movflags", "frag_keyframe+empty_moov+default_base_moof",
+      "pipe:1",
     ];
-    if (codec === 'aac') {
-      ffmpegArgs.push("-movflags", "frag_keyframe+empty_moov+default_base_moof");
-    }
-    console.log(`${tag} Using codec ${codec} (format ${format})`);
+    console.log(`${tag} Using codec: aac (fragmented MP4)`);
+  } else if (codec === "mp3") {
+    ffmpegArgs = [
+      "-loglevel", "info",
+      ...inputArgs,
+      "-c:a", "libmp3lame",
+      "-b:a", "64k",
+      "-f", "mp3",
+      "pipe:1",
+    ];
+    console.log(`${tag} Using codec: mp3`);
   } else {
-    // default to Opus/WebM
+    // Default: Opus/WebM — best quality + low latency
     ffmpegArgs = [
       "-loglevel", "info",
       ...inputArgs,
@@ -170,29 +234,39 @@ async function startAudioStreamWindows(sessionId, codec = 'opus') {
       "-cluster_time_limit", "100",
       "pipe:1",
     ];
-    console.log(`${tag} Using ${audioDevice && !useLoopback ? 'DirectShow device' : 'WASAPI loopback'}`);
+    console.log(`${tag} Using codec: opus/webm via dshow device "${audioDevice}"`);
   }
 
-  return spawnFFmpegAudio(sessionId, tag, ffmpegPath, ffmpegArgs, "windows", codec);
+  // Small delay so Chromium has time to register its audio session with Windows
+  // before FFmpeg opens the dshow device. Without this, FFmpeg captures silence.
+  await new Promise(r => setTimeout(r, 1500));
+  console.log(`${tag} Delay done — spawning FFmpeg now`);
+
+  return spawnFFmpegAudio(
+    sessionId,
+    tag,
+    ffmpegPath,
+    ffmpegArgs,
+    "windows",
+    codec,
+    {},
+    "windows"
+  );
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
 // LINUX: PulseAudio null-sink + FFmpeg
 // ══════════════════════════════════════════════════════════════════════════════
-async function startAudioStreamLinux(sessionId, codec = 'opus') {
+async function startAudioStreamLinux(sessionId, codec = "opus") {
   const tag = `[Audio:${sessionId.slice(0, 8)}]`;
   const sinkName = `sink_${sessionId.replace(/-/g, "_")}`;
   console.log(`${tag} codec=${codec}`);
-
   console.log(`\n${tag} ══════ Starting Linux audio pipeline ══════`);
 
-  // Step 1: Check dependencies
-  console.log(`${tag} Step 1: Checking dependencies...`);
   if (!(await checkDependencies(tag))) {
     return makeNoopSession(sessionId, sinkName, "missing dependencies");
   }
 
-  // Snapshot current default sink so we restore it on cleanup
   let previousDefaultSink = null;
   try {
     const { stdout } = await execFileAsync("pactl", ["info"]);
@@ -205,8 +279,6 @@ async function startAudioStreamLinux(sessionId, codec = 'opus') {
     console.log(`${tag}   Previous default sink: "${previousDefaultSink}"`);
   } catch {}
 
-  // Step 2: Create null-sink
-  console.log(`${tag} Step 2: Creating null-sink "${sinkName}"...`);
   let moduleId;
   try {
     const { stdout } = await execFileAsync("pactl", [
@@ -219,25 +291,9 @@ async function startAudioStreamLinux(sessionId, codec = 'opus') {
     console.log(`${tag}   ✓ Null-sink created — module ID: ${moduleId}`);
   } catch (err) {
     console.error(`${tag}   ✗ Failed to create null-sink: ${err.message}`);
-    return makeNoopSession(
-      sessionId,
-      sinkName,
-      `sink creation failed: ${err.message}`,
-    );
+    return makeNoopSession(sessionId, sinkName, `sink creation failed: ${err.message}`);
   }
 
-  // Verify sink is visible
-  try {
-    const { stdout } = await execFileAsync("pactl", ["list", "sinks", "short"]);
-    const found = stdout.includes(sinkName);
-    console.log(`${tag}   ${found ? "✓" : "✗"} Sink visible in list: ${found}`);
-    if (!found) console.log(`${tag}   Current sinks:\n${stdout.trim()}`);
-  } catch {}
-
-  // Step 3: Set our sink as the DEFAULT
-  console.log(
-    `${tag} Step 3: Setting "${sinkName}" as default sink (KEY FIX)...`,
-  );
   try {
     await execFileAsync("pactl", ["set-default-sink", sinkName]);
     console.log(`${tag}   ✓ Default sink updated`);
@@ -245,25 +301,31 @@ async function startAudioStreamLinux(sessionId, codec = 'opus') {
     console.warn(`${tag}   ⚠ set-default-sink failed: ${err.message}`);
   }
 
-  // Step 4: Launch FFmpeg on the monitor source
   const monitorSource = `${sinkName}.monitor`;
-  console.log(`${tag} Step 4: Launching FFmpeg on "${monitorSource}"...`);
+  console.log(`${tag} Launching FFmpeg on "${monitorSource}"...`);
 
   let ffmpegArgs;
-  if (codec === 'aac' || codec === 'mp3') {
-    const format = codec === 'aac' ? 'mp4' : 'mp3';
-    const codecName = codec === 'aac' ? 'aac' : 'libmp3lame';
+  if (codec === "aac") {
     ffmpegArgs = [
       "-loglevel", "info",
       "-f", "pulse",
       "-i", monitorSource,
-      "-c:a", codecName,
+      "-c:a", "aac",
       "-b:a", "64k",
-      "-f", format,
+      "-f", "mp4",
+      "-movflags", "frag_keyframe+empty_moov+default_base_moof",
+      "pipe:1",
     ];
-    if (codec === 'aac') {
-      ffmpegArgs.push("-movflags", "frag_keyframe+empty_moov+default_base_moof");
-    }
+  } else if (codec === "mp3") {
+    ffmpegArgs = [
+      "-loglevel", "info",
+      "-f", "pulse",
+      "-i", monitorSource,
+      "-c:a", "libmp3lame",
+      "-b:a", "64k",
+      "-f", "mp3",
+      "pipe:1",
+    ];
   } else {
     ffmpegArgs = [
       "-loglevel", "info",
@@ -276,7 +338,6 @@ async function startAudioStreamLinux(sessionId, codec = 'opus') {
       "-application", "lowdelay",
       "-frame_duration", "20",
       "-f", "webm",
-      // Force cluster-aligned chunks — each Node.js data event = complete WebM cluster
       "-cluster_size_limit", "2048",
       "-cluster_time_limit", "100",
       "pipe:1",
@@ -284,11 +345,16 @@ async function startAudioStreamLinux(sessionId, codec = 'opus') {
   }
 
   const session = await spawnFFmpegAudio(
-    sessionId, tag, "ffmpeg", ffmpegArgs, sinkName, codec,
-    { env: { ...process.env, PULSE_SINK: sinkName } }
+    sessionId,
+    tag,
+    "ffmpeg",
+    ffmpegArgs,
+    sinkName,
+    codec,
+    { env: { ...process.env, PULSE_SINK: sinkName } },
+    "pulseaudio"
   );
 
-  // Attach Linux-specific reroute and stop methods
   const originalStop = session.stop.bind(session);
   session.stop = async () => {
     await originalStop();
@@ -304,13 +370,9 @@ async function startAudioStreamLinux(sessionId, codec = 'opus') {
   session.reroute = async () => {
     console.log(`${tag} Rerouting sink-inputs to "${sinkName}"...`);
     try {
-      const { stdout } = await execFileAsync("pactl", [
-        "list", "sink-inputs", "short",
-      ]);
+      const { stdout } = await execFileAsync("pactl", ["list", "sink-inputs", "short"]);
       const lines = stdout.trim();
-      console.log(
-        `${tag}   Sink-inputs:\n${lines || "  (none — Chromium not playing audio yet)"}`,
-      );
+      console.log(`${tag}   Sink-inputs:\n${lines || "  (none)"}`);
       const ids = lines
         .split("\n")
         .map((l) => l.split("\t")[0].trim())
@@ -332,7 +394,16 @@ async function startAudioStreamLinux(sessionId, codec = 'opus') {
 }
 
 // ── Shared FFmpeg spawn helper ─────────────────────────────────────────────────
-function spawnFFmpegAudio(sessionId, tag, ffmpegBin, args, sinkName, codec = 'opus', extraSpawnOpts = {}) {
+function spawnFFmpegAudio(
+  sessionId,
+  tag,
+  ffmpegBin,
+  args,
+  sinkName,
+  codec = "opus",
+  extraSpawnOpts = {},
+  method = "pulseaudio"
+) {
   return new Promise((resolve) => {
     let ffmpeg;
     try {
@@ -343,7 +414,9 @@ function spawnFFmpegAudio(sessionId, tag, ffmpegBin, args, sinkName, codec = 'op
       console.log(`${tag}   ✓ FFmpeg spawned — PID: ${ffmpeg.pid}`);
     } catch (err) {
       console.error(`${tag}   ✗ FFmpeg spawn failed: ${err.message}`);
-      resolve(makeNoopSession(sessionId, sinkName, `ffmpeg spawn failed: ${err.message}`));
+      resolve(
+        makeNoopSession(sessionId, sinkName, `ffmpeg spawn failed: ${err.message}`)
+      );
       return;
     }
 
@@ -376,22 +449,19 @@ function spawnFFmpegAudio(sessionId, tag, ffmpegBin, args, sinkName, codec = 'op
     ffmpeg.on("exit", (code, sig) => {
       clearTimeout(noAudioTimer);
       console.log(
-        `${tag} FFmpeg exited code=${code} sig=${sig} | ${chunksProduced} chunks / ${(bytesProduced / 1024).toFixed(1)} KB`,
+        `${tag} FFmpeg exited code=${code} sig=${sig} | ${chunksProduced} chunks / ${(bytesProduced / 1024).toFixed(1)} KB`
       );
       if (code !== 0 && code !== null)
         console.error(`${tag} ✗ Non-zero exit — see FFmpeg logs above`);
     });
 
     ffmpeg.on("error", (err) =>
-      console.error(`${tag} ✗ FFmpeg error: ${err.message}`),
+      console.error(`${tag} ✗ FFmpeg error: ${err.message}`)
     );
 
-    // Step 5: Buffer chunks until WebSocket connects.
-    // IMPORTANT: The very first chunk is the WebM initialization segment (EBML header
-    // + Segment Info + Tracks). Every new client MUST receive it before any media data.
     let wsRef = null;
-    let initChunk = null;   // WebM header — kept forever, sent to every new client
-    const pending = [];     // ring-buffer of recent media clusters
+    let initChunk = null;
+    const pending = [];
 
     ffmpeg.stdout.on("data", (chunk) => {
       chunksProduced++;
@@ -403,85 +473,101 @@ function spawnFFmpegAudio(sessionId, tag, ffmpegBin, args, sinkName, codec = 'op
           .join(" ");
         const webmOk = header.startsWith("1a 45 df a3");
         console.log(
-          `${tag}   Chunk #${chunksProduced}: ${chunk.byteLength}B | header: ${header}${chunksProduced === 1 ? (webmOk ? " ✓ valid WebM" : " ✗ NOT WebM!") : ""} | ws=${wsRef ? "live" : "pending"}`,
+          `${tag}   Chunk #${chunksProduced}: ${chunk.byteLength}B | header: ${header}${
+            chunksProduced === 1
+              ? webmOk
+                ? " ✓ valid WebM"
+                : " ✗ NOT WebM!"
+              : ""
+          } | ws=${wsRef ? "live" : "pending"}`
         );
       } else if (chunksProduced % 100 === 0) {
         console.log(
-          `${tag}   Chunk #${chunksProduced} | total ${(bytesProduced / 1024).toFixed(1)} KB`,
+          `${tag}   Chunk #${chunksProduced} | total ${(bytesProduced / 1024).toFixed(1)} KB`
         );
       }
 
-      // The first chunk is always the WebM init segment — preserve it separately.
       if (chunksProduced === 1) {
         initChunk = chunk;
       }
 
       if (wsRef && wsRef.readyState === 1) {
-        wsRef.send(Buffer.concat([Buffer.from([0x02]), chunk]), { binary: true });
+        wsRef.send(Buffer.concat([Buffer.from([0x02]), chunk]), {
+          binary: true,
+        });
       } else {
         if (pending.length < 100) {
           pending.push(chunk);
         } else {
-          // Drop oldest media cluster but preserve init chunk at index 0
           pending.splice(1, 1);
           pending.push(chunk);
         }
       }
     });
 
-    // Loud warning if silence after 8 seconds
     const noAudioTimer = setTimeout(() => {
       if (chunksProduced === 0) {
         console.error(`\n${tag} ✗ ══ ZERO audio chunks after 8s! ══`);
-        if (IS_WINDOWS) {
-          console.error(`${tag}   On Windows, check:`);
-          console.error(`${tag}   1. FFmpeg is in PATH (run: ffmpeg -version)`);
-          console.error(`${tag}   2. VB-Cable is installed: https://vb-audio.com/Cable/`);
-          console.error(`${tag}      Set VB-Cable Input as the Default Playback Device`);
-          console.error(`${tag}      Set VB-Cable Output as the Default Recording Device`);
-          console.error(`${tag}   3. OR: Enable "Stereo Mix" in Sound settings`);
-          console.error(`${tag}      Right-click speaker → Sounds → Recording → enable Stereo Mix`);
-          console.error(`${tag}   4. Chromium uses its own audio session — you may need`);
-          console.error(`${tag}      to set the default Windows playback device BEFORE`);
-          console.error(`${tag}      starting the session so Chromium picks it up.`);
-        } else {
-          console.error(`${tag}   Run: $ pactl list sink-inputs short`);
-          console.error(`${tag}   (Chromium should appear once a video plays)`);
-        }
+        console.error(`${tag}   Windows fix — you need one of:`);
+        console.error(
+          `${tag}   1. VB-Cable (recommended): https://vb-audio.com/Cable/`
+        );
+        console.error(
+          `${tag}      • Install, then set "CABLE Input" as Default Playback Device`
+        );
+        console.error(
+          `${tag}      • Set "CABLE Output" as Default Recording Device`
+        );
+        console.error(
+          `${tag}   2. Stereo Mix: right-click speaker → Sounds → Recording`
+        );
+        console.error(
+          `${tag}      → right-click empty → Show Disabled → Enable "Stereo Mix"`
+        );
+        console.error(
+          `${tag}      → Set as Default Device`
+        );
+        console.error(
+          `${tag}   Then restart the session.`
+        );
       }
     }, 8000);
 
     console.log(`${tag} Step 5: Pipeline ready — waiting for WebSocket`);
 
     resolve({
-      method: "pulseaudio",
+      method,
       sinkName,
       codec,
 
-      /** Attach WebSocket and flush all buffered chunks (including WebM header). */
       flushAudio(socket) {
         wsRef = socket;
         console.log(
-          `${tag} WebSocket attached — flushing init=${initChunk ? initChunk.byteLength + "B" : "none"} + ${pending.length} pending clusters`,
+          `${tag} WebSocket attached — flushing init=${
+            initChunk ? initChunk.byteLength + "B" : "none"
+          } + ${pending.length} pending clusters`
         );
-        // Always send the init segment first so MSE can initialise the codec.
         if (initChunk && (pending.length === 0 || pending[0] !== initChunk)) {
-          socket.send(Buffer.concat([Buffer.from([0x02]), initChunk]), { binary: true });
+          socket.send(Buffer.concat([Buffer.from([0x02]), initChunk]), {
+            binary: true,
+          });
         }
         for (const chunk of pending) {
-          socket.send(Buffer.concat([Buffer.from([0x02]), chunk]), { binary: true });
+          socket.send(Buffer.concat([Buffer.from([0x02]), chunk]), {
+            binary: true,
+          });
         }
         pending.length = 0;
       },
 
       async reroute() {
-        // No-op by default; overridden by Linux path above
+        // No-op by default; overridden by Linux path
       },
 
       async stop() {
         clearTimeout(noAudioTimer);
         console.log(
-          `${tag} Stopping — ${chunksProduced} chunks / ${(bytesProduced / 1024).toFixed(1)} KB`,
+          `${tag} Stopping — ${chunksProduced} chunks / ${(bytesProduced / 1024).toFixed(1)} KB`
         );
         if (ffmpeg && !ffmpeg.killed) ffmpeg.kill("SIGTERM");
       },
@@ -498,9 +584,7 @@ async function checkDependencies(tag) {
       const { stdout } = await execFileAsync("which", [tool]);
       console.log(`${tag}   ✓ ${tool}: ${stdout.trim()}`);
     } catch {
-      console.error(
-        `${tag}   ✗ ${tool} not found — install: apt-get install -y ${tool === "pactl" ? "pulseaudio" : "ffmpeg"}`,
-      );
+      console.error(`${tag}   ✗ ${tool} not found`);
       ok = false;
     }
   }
@@ -508,10 +592,7 @@ async function checkDependencies(tag) {
     const { stdout } = await execFileAsync("pactl", ["info"]);
     const lines = stdout.split("\n");
     console.log(
-      `${tag}   ✓ PulseAudio: ${lines.find((l) => l.includes("Server Name"))?.trim()}`,
-    );
-    console.log(
-      `${tag}     ${lines.find((l) => l.includes("Default Sink"))?.trim()}`,
+      `${tag}   ✓ PulseAudio: ${lines.find((l) => l.includes("Server Name"))?.trim()}`
     );
   } catch (e) {
     console.error(`${tag}   ✗ PulseAudio not running: ${e.message}`);
@@ -522,7 +603,6 @@ async function checkDependencies(tag) {
       console.log(`${tag}   ✓ PulseAudio auto-started`);
     } catch (e2) {
       console.error(`${tag}   ✗ Auto-start failed: ${e2.message}`);
-      console.error(`${tag}     Run: pulseaudio --start --exit-idle-time=-1`);
       ok = false;
     }
   }
@@ -544,6 +624,7 @@ function makeNoopSession(sessionId, sinkName, reason) {
   return {
     method: "none",
     sinkName,
+    codec: "none",
     moduleId: null,
     reason,
     flushAudio() {},

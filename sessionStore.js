@@ -53,6 +53,14 @@ async function deleteSession(id) {
   sessions.delete(id); // Remove first to prevent double-cleanup
 
   try {
+    // Stop WebRTC peer connection and data channel
+    if (session.peerConnection) {
+      if (session.videoChannel) {
+        session.videoChannel.close();
+      }
+      session.peerConnection.close();
+    }
+
     // Stop screencast CDP session
     if (session.cdpSession) {
       const { stopScreencast } = require("./streamManager");

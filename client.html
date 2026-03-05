@@ -25,7 +25,7 @@
       overflow-x: hidden;
     }
 
-    /* ── Header ─────────────────────────────────────────────────────────── */
+    /* ── Header ── */
     .header {
       width: 100%;
       padding: 10px 16px;
@@ -137,7 +137,7 @@
       }
     }
 
-    /* ── Mobile frame ────────────────────────────────────────────────────── */
+    /* ── Mobile frame ── */
     .mobile-frame {
       margin: 16px auto 0;
       border: 10px solid #2d2f3a;
@@ -153,8 +153,6 @@
       display: block;
       width: 100%;
       height: 100%;
-      /* tell the browser not to do any default touch actions so
-         our touchmove handler handles all scrolling */
       touch-action: none;
       cursor: default;
       image-rendering: auto;
@@ -181,7 +179,7 @@
       display: none;
     }
 
-    /* ── Info / controls below frame ─────────────────────────────────────── */
+    /* ── Info bar ── */
     .info-bar {
       display: flex;
       gap: 16px;
@@ -191,16 +189,16 @@
       font-size: 11px;
       color: #484f58;
       width: 100%;
-      max-width: 420px;
+      max-width: 480px;
     }
 
-    /* ── Scroll buttons ──────────────────────────────────────────────────── */
+    /* ── Scroll buttons ── */
     .scroll-bar {
       display: flex;
       gap: 8px;
       padding: 6px 16px 4px;
       width: 100%;
-      max-width: 420px;
+      max-width: 480px;
       justify-content: center;
     }
 
@@ -209,7 +207,7 @@
       padding: 5px 12px;
     }
 
-    /* ── Audio banner ────────────────────────────────────────────────────── */
+    /* ── Audio banner ── */
     #audioBanner {
       width: 100%;
       max-width: 480px;
@@ -219,7 +217,7 @@
       color: #8b949e;
     }
 
-    /* ── Text input ──────────────────────────────────────────────────────── */
+    /* ── Text input ── */
     .input-bar {
       display: flex;
       gap: 8px;
@@ -247,19 +245,21 @@
 
 <body>
 
-  <!-- ── Header ────────────────────────────────────────────────────────────── -->
+  <!-- ── Header ── -->
   <div class="header">
     <h1>📱 Remote Browser</h1>
     <div class="controls">
       <select id="platformSelect">
         <option value="instagram">Instagram</option>
         <option value="tiktok">TikTok</option>
+        <option value="youtube">YouTube</option>
         <option value="facebook">Facebook</option>
         <option value="x">Twitter / X</option>
         <option value="linkedin">LinkedIn</option>
         <option value="discord">Discord</option>
         <option value="messenger">Messenger</option>
         <option value="telegram">Telegram</option>
+        <option value="google">Google</option>
       </select>
       <div class="status-dot" id="statusDot"></div>
       <button class="primary" id="startBtn" onclick="startSession()">Start</button>
@@ -267,13 +267,13 @@
     </div>
   </div>
 
-  <!-- ── Mobile frame ──────────────────────────────────────────────────────── -->
+  <!-- ── Mobile frame ── -->
   <div class="mobile-frame" id="mobileFrame">
-    <canvas id="screen"></canvas>
+    <canvas id="screen" style="display: none;"></canvas>
     <div class="overlay" id="overlay">Select a platform and click Start</div>
   </div>
 
-  <!-- ── Stats ─────────────────────────────────────────────────────────────── -->
+  <!-- ── Stats ── -->
   <div class="info-bar">
     <span id="resolutionEl">—</span>
     <span id="fpsEl">0 fps</span>
@@ -281,30 +281,30 @@
     <span id="audioMethodEl">—</span>
   </div>
 
-  <!-- ── Scroll buttons (click or hold) ────────────────────────────────────── -->
+  <!-- ── Scroll buttons ── -->
   <div class="scroll-bar" id="scrollBar" style="display:none">
-    <button id="scrollTopBtn">▲▲</button>
+    <button id="scrollTopBtn">▲▲ Top</button>
     <button id="scrollUpBtn">▲ Up</button>
     <button id="scrollDownBtn">▼ Down</button>
-    <button id="scrollBotBtn">▼▼</button>
+    <button id="scrollBotBtn">▼▼ Bot</button>
   </div>
 
-  <!-- ── Audio banner ───────────────────────────────────────────────────────── -->
+  <!-- ── Audio banner + controls ── -->
   <div id="audioBanner">🔇 Audio not started</div>
-
-  <!-- ── Audio debug button ────────────────────────────────────────────────── -->
-  <div class="input-bar" style="padding-bottom:4px">
-    <button onclick="window.audioDebug?.()" style="background:#1f6feb;border-color:#1f6feb;font-size:12px">
-      🔍 Audio Debug (check console)
+  <div class="input-bar" style="padding-bottom:4px; gap:6px;">
+    <button onclick="window.audioDebug?.()" style="background:#1f6feb;border-color:#1f6feb;font-size:12px;flex:1">
+      🔍 Audio Debug
     </button>
-    <button
-      onclick="if(audioEl&&audioEl.paused)audioEl.play().then(()=>setAudioBanner('🔊 Playing','#3fb950')).catch(e=>setAudioBanner('✗ '+e.message,'#f85149'));else setAudioBanner('Already playing or not ready','#8b949e')"
-      style="background:#238636;border-color:#2ea043;font-size:12px">
+    <button id="forcePlayBtn" onclick="forcePlayAudio()"
+      style="background:#238636;border-color:#2ea043;font-size:12px;flex:1">
       ▶ Force Play Audio
     </button>
+    <button onclick="forceUnmuteRemote()" style="background:#6e40c9;border-color:#8957e5;font-size:12px;flex:1">
+      🔊 Force Unmute
+    </button>
   </div>
 
-  <!-- ── Text input ────────────────────────────────────────────────────────── -->
+  <!-- ── Text input ── -->
   <div class="input-bar">
     <input id="textInput" type="text" placeholder="Type text to send…"
       onkeydown="if(event.key==='Enter'){sendText();event.preventDefault();}">
@@ -315,38 +315,38 @@
     // ═══════════════════════════════════════════════════════════════════════════
     // Config
     // ═══════════════════════════════════════════════════════════════════════════
-    // SERVER_URL: auto-detect the Node server.
-    // If you're opening this file from VS Code Live Server (port 5500) or directly
-    // from the filesystem, we fall back to localhost:3000 automatically.
-    // Change the fallback if your server runs on a different host/port.
     const SERVER_URL = (() => {
       const origin = window.location.origin;
-      // If served directly by the Node/Express server (port 3000), use that origin
       if (origin.includes(":3000")) return origin;
-      // Opened from VS Code Live Server, file://, or any other port → point at Node server
       return "http://localhost:3000";
     })();
-    console.log("[Config] SERVER_URL resolved to:", SERVER_URL);
+    console.log("[Config] SERVER_URL:", SERVER_URL);
 
-    const SERVER_W = 360;   // Must match server.js MOBILE_WIDTH
-    const SERVER_H = 780;   // Must match server.js MOBILE_HEIGHT
+    // ── IMPORTANT: these MUST match MOBILE_WIDTH / MOBILE_HEIGHT in server.js ──
+    const SERVER_W = 390;   // matches server.js MOBILE_WIDTH
+    const SERVER_H = 844;   // matches server.js MOBILE_HEIGHT
 
-    // pick an audio MIME that this browser can decode via MediaSource
-    const SUPPORTED_AUDIO_MIMES = [
-      'audio/webm;codecs=opus',              // desktop Chrome/Firefox
-      'audio/mp4;codecs="mp4a.40.2"',      // mobile Safari/Chrome (AAC)
-      'audio/mpeg'                           // generic MP3 fallback
+    // Display size in the browser window (CSS pixels).
+    // Adjust to taste — the canvas will scale to fill this.
+    const DISPLAY_W = 390;
+    const DISPLAY_H = 700;
+
+    // ── Pick best audio MIME this browser supports ──────────────────────────────
+    const AUDIO_MIME_CANDIDATES = [
+      "audio/webm;codecs=opus",       // Chrome/Firefox desktop
+      'audio/mp4;codecs="mp4a.40.2"', // Safari / iOS / some Android
+      "audio/mpeg",                   // MP3 fallback
     ];
-
     function pickAudioMime() {
-      for (const m of SUPPORTED_AUDIO_MIMES) {
-        if (window.MediaSource && MediaSource.isTypeSupported(m)) return m;
+      if (!window.MediaSource) return null;
+      for (const m of AUDIO_MIME_CANDIDATES) {
+        if (MediaSource.isTypeSupported(m)) return m;
       }
       return null;
     }
-
     let AUDIO_MIME = pickAudioMime();
     const isMobileBrowser = /iP(hone|od|ad)|Android/.test(navigator.userAgent);
+    console.log("[Audio] Selected MIME:", AUDIO_MIME);
 
     // ═══════════════════════════════════════════════════════════════════════════
     // DOM refs
@@ -367,26 +367,15 @@
     const audioBanner = document.getElementById("audioBanner");
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // Responsive canvas
+    // Canvas setup — intrinsic = server resolution, CSS = display size
     // ═══════════════════════════════════════════════════════════════════════════
     function setupCanvas() {
-      const maxW = Math.min(window.innerWidth - 24, 480);
-      const maxH = window.innerHeight - 160;
-      const ratio = SERVER_W / SERVER_H;
-      let dW, dH;
-      if (maxW / maxH > ratio) { dH = maxH; dW = dH * ratio; }
-      else { dW = maxW; dH = dW / ratio; }
-
-      canvas.width = SERVER_W;
-      canvas.height = SERVER_H;
-      canvas.style.width = dW + "px";
-      canvas.style.height = dH + "px";
-      mobileFrame.style.width = dW + "px";
-      mobileFrame.style.height = dH + "px";
-      resolutionEl.textContent = `${SERVER_W}×${SERVER_H}`;
+      canvas.style.width = DISPLAY_W + "px";
+      canvas.style.height = DISPLAY_H + "px";
+      mobileFrame.style.width = DISPLAY_W + "px";
+      mobileFrame.style.height = DISPLAY_H + "px";
     }
     setupCanvas();
-    window.addEventListener("resize", setupCanvas);
 
     // ═══════════════════════════════════════════════════════════════════════════
     // State
@@ -395,24 +384,27 @@
     let ws = null;
     let streaming = false;
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Audio — MediaSource Extensions, WebM/Opus
-    // ═══════════════════════════════════════════════════════════════════════════
-    // The server sends WebM/Opus chunks prefixed with byte 0x02.
-    // We pipe them into a MediaSource SourceBuffer for seamless playback.
-    // On first user gesture we resume the AudioContext (browser autoplay policy).
+    // Logical server dimensions — updated from stream-started msg if server reports custom size
+    let logicalW = SERVER_W;
+    let logicalH = SERVER_H;
 
+    // Mouse position (shared between mousemove listener and keyboard scroll handler)
+    let lastMouseX = Math.round(SERVER_W / 2);
+    let lastMouseY = Math.round(SERVER_H / 2);
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Audio — MediaSource Extensions pipeline
+    // ═══════════════════════════════════════════════════════════════════════════
     let mediaSource = null;
     let sourceBuffer = null;
     let audioEl = null;
     let audioReady = false;
-    const audioQueue = [];     // chunks waiting for MSE to be ready
+    const audioQueue = [];
 
     let audioChunkCount = 0;
     let audioByteCount = 0;
     let lastAudioStatTs = performance.now();
-
-    const AUDIO_MIME = 'audio/webm;codecs=opus';
+    let totalAudioChunksReceived = 0;
 
     function setAudioBanner(msg, color) {
       audioBanner.textContent = msg;
@@ -421,145 +413,144 @@
     }
 
     function initAudio() {
-      if (audioEl) { console.log("[Audio] initAudio called but already initialised"); return; }
+      if (audioEl) { console.log("[Audio] Already initialised"); return; }
 
       if (!AUDIO_MIME) {
-        setAudioBanner("⚠ No supported audio codec", "#f85149");
-        console.error("[Audio] no MIME available for MediaSource on this browser");
+        setAudioBanner("⚠ No supported audio codec in this browser", "#f85149");
         return;
       }
 
-      console.log("[Audio] Initialising MSE pipeline...");
-      console.log("[Audio]   MediaSource supported:", !!window.MediaSource);
-      console.log("[Audio]   MIME supported (" + AUDIO_MIME + "):", window.MediaSource ? MediaSource.isTypeSupported(AUDIO_MIME) : "N/A");
+      console.log("[Audio] Initialising MSE pipeline — MIME:", AUDIO_MIME);
 
-      if (!window.MediaSource || !MediaSource.isTypeSupported(AUDIO_MIME)) {
-        setAudioBanner("⚠ Audio not supported in this browser", "#f85149");
-        console.error("[Audio] Cannot initialise — MediaSource not available for", AUDIO_MIME);
-        return;
-      }
-
-      // mobile Safari/Chrome only implement MSE on a <video> element
-      const tagName = isMobileBrowser ? 'video' : 'audio';
+      const tagName = "audio"; // Always use audio element
       audioEl = document.createElement(tagName);
       audioEl.volume = 1.0;
       audioEl.autoplay = true;
       audioEl.playsInline = true;
       audioEl.muted = false;
-      audioEl.style.display = 'none';
+      audioEl.controls = false;
+      // visibility:hidden keeps it in the render tree (Chrome sees it as active audio)
+      // but display:none removes it from the tree (Chrome ignores it for tab indicator)
+      audioEl.style.cssText = "position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;bottom:0;left:0;";
       document.body.appendChild(audioEl);
 
-      // Log every audio/video element event
-      ["play", "pause", "playing", "waiting", "stalled", "ended", "error", "canplay", "canplaythrough"].forEach(ev => {
-        audioEl.addEventListener(ev, () => console.log(`[Audio] <audio> event: "${ev}" | paused=${audioEl.paused} | currentTime=${audioEl.currentTime.toFixed(3)} | readyState=${audioEl.readyState}`));
+      ["play", "pause", "playing", "waiting", "stalled", "ended", "error", "canplay"].forEach(ev => {
+        audioEl.addEventListener(ev, () =>
+          console.log(`[Audio] <${tagName}> "${ev}" | paused=${audioEl.paused} | time=${audioEl.currentTime.toFixed(2)} | rS=${audioEl.readyState}`)
+        );
       });
       audioEl.addEventListener("error", () => {
-        const err = audioEl.error;
-        console.error("[Audio] <audio> MediaError:", err ? `code=${err.code} message=${err.message}` : "unknown");
+        const e = audioEl.error;
+        console.error("[Audio] MediaError:", e ? `code=${e.code} msg=${e.message}` : "unknown");
+        setAudioBanner("⚠ Audio playback error — see console", "#f85149");
       });
 
       mediaSource = new MediaSource();
-      console.log("[Audio] MediaSource created — readyState:", mediaSource.readyState);
 
       mediaSource.addEventListener("sourceopen", () => {
-        console.log("[Audio] MediaSource sourceopen fired — readyState:", mediaSource.readyState);
+        console.log("[Audio] sourceopen — readyState:", mediaSource.readyState);
         try {
           sourceBuffer = mediaSource.addSourceBuffer(AUDIO_MIME);
           sourceBuffer.mode = "sequence";
-          console.log("[Audio] SourceBuffer created — mode:", sourceBuffer.mode);
+          console.log("[Audio] SourceBuffer created, mode=sequence");
 
-          let playStarted = false;
+          let playTriggered = false;
           sourceBuffer.addEventListener("updateend", () => {
-            // Log buffer state periodically
-            if (sourceBuffer.buffered.length > 0) {
-              const start = sourceBuffer.buffered.start(0);
-              const end = sourceBuffer.buffered.end(sourceBuffer.buffered.length - 1);
-              const ahead = end - (audioEl ? audioEl.currentTime : 0);
-              if (Math.random() < 0.05) {
-                console.log(`[Audio] Buffer: ${start.toFixed(2)}s–${end.toFixed(2)}s | ahead: ${ahead.toFixed(2)}s | queue: ${audioQueue.length}`);
-              }
-
-              // Start playback on FIRST chunk successfully appended
-              if (!playStarted && audioEl && audioEl.paused) {
-                playStarted = true;
-                console.log("[Audio] First chunk appended — calling play() now");
-                audioEl.play().then(() => {
-                  console.log("[Audio] ✓ play() resolved — audio is live");
-                  setAudioBanner("🔊 Audio streaming (live)", "#3fb950");
-                }).catch((err) => {
-                  console.warn("[Audio] play() blocked by autoplay policy:", err.name, err.message);
-                  setAudioBanner("👆 Tap the page or click ▶ Force Play Audio", "#d29922");
+            if (sourceBuffer.buffered.length > 0 && !playTriggered && audioEl?.paused) {
+              playTriggered = true;
+              console.log("[Audio] First chunk buffered — calling play()");
+              audioEl.play()
+                .then(() => {
+                  console.log("[Audio] ✓ play() resolved");
+                  setAudioBanner("🔊 Audio streaming live", "#3fb950");
+                })
+                .catch((err) => {
+                  console.warn("[Audio] play() blocked:", err.name, err.message);
+                  setAudioBanner("👆 Click page or tap ▶ Force Play Audio to enable sound", "#d29922");
                 });
-              }
             }
             drainAudioQueue();
           });
 
           sourceBuffer.addEventListener("error", (e) => {
-            console.error("[Audio] SourceBuffer error event:", e);
+            console.error("[Audio] SourceBuffer error:", e);
             setAudioBanner("⚠ Audio buffer error", "#f85149");
           });
 
           audioReady = true;
-          console.log("[Audio] audioReady = true | draining queue of", audioQueue.length, "chunks");
+          console.log("[Audio] Ready — draining", audioQueue.length, "buffered chunks");
           drainAudioQueue();
-
-          // Don't call play() here — call it after the first chunk is appended
-          // so the browser has actual data to play (avoids NotAllowedError on empty streams)
-          console.log("[Audio] MSE ready — play() will be called after first chunk appends");
-          setAudioBanner("⏳ Audio pipeline ready — waiting for first chunk…", "#d29922");
+          setAudioBanner("⏳ Audio ready — waiting for first chunk…", "#d29922");
         } catch (e) {
           console.error("[Audio] SourceBuffer init error:", e.name, e.message);
           setAudioBanner("⚠ MSE init error: " + e.message, "#f85149");
         }
       });
 
-      mediaSource.addEventListener("sourceclose", () => console.warn("[Audio] MediaSource sourceclose — stream ended"));
-      mediaSource.addEventListener("error", () => console.error("[Audio] MediaSource error event"));
+      mediaSource.addEventListener("sourceclose", () => console.warn("[Audio] sourceclose"));
+      mediaSource.addEventListener("error", () => console.error("[Audio] MediaSource error"));
 
-      const objectURL = URL.createObjectURL(mediaSource);
-      audioEl.src = objectURL;
-      console.log("[Audio] audioEl.src set to blob URL:", objectURL.slice(0, 40) + "...");
+      audioEl.src = URL.createObjectURL(mediaSource);
+      console.log("[Audio] src set to blob URL");
     }
 
-    // Resume audio on any user interaction (handles browser autoplay policy)
+    function forcePlayAudio() {
+      if (!audioEl) { setAudioBanner("⚠ Audio not initialised yet", "#f85149"); return; }
+      audioEl.muted = false;
+      audioEl.volume = 1.0;
+      audioEl.play()
+        .then(() => setAudioBanner("🔊 Playing!", "#3fb950"))
+        .catch((e) => setAudioBanner("✗ " + e.message, "#f85149"));
+    }
+
+    // Sends a command to the server to re-unmute all videos in the browser page
+    function forceUnmuteRemote() {
+      sendInput({ type: "__unmute__" });  // handled in inputHandler
+      setAudioBanner("🔊 Unmute command sent to remote browser", "#3fb950");
+    }
+
+    // Resume on any user interaction (handles autoplay policy)
     function resumeAudioOnGesture() {
-      if (audioEl && audioEl.paused) {
-        console.log("[Audio] Resuming on user gesture — audioEl.paused was true");
+      if (audioEl && audioEl.paused && audioReady) {
         audioEl.play()
-          .then(() => {
-            console.log("[Audio] ✓ Resumed after user gesture");
-            setAudioBanner("🔊 Audio streaming (live)", "#3fb950");
-          })
-          .catch((e) => console.warn("[Audio] Resume after gesture failed:", e.message));
+          .then(() => setAudioBanner("🔊 Audio streaming live", "#3fb950"))
+          .catch(() => { });
       }
     }
-
-    // Expose a global diagnostic function — call audioDebug() in browser console
-    window.audioDebug = function () {
-      console.group("🎵 Audio Pipeline Diagnostics");
-      console.log("selected AUDIO_MIME:", AUDIO_MIME, "supported?", MediaSource?.isTypeSupported?.(AUDIO_MIME));
-      console.log("audioEl:", audioEl ? { paused: audioEl.paused, volume: audioEl.volume, readyState: audioEl.readyState, currentTime: audioEl.currentTime, src: audioEl.src?.slice(0, 40) } : null);
-      console.log("mediaSource readyState:", mediaSource?.readyState);
-      console.log("sourceBuffer:", sourceBuffer ? { updating: sourceBuffer.updating, mode: sourceBuffer.mode, buffered: sourceBuffer.buffered.length > 0 ? `${sourceBuffer.buffered.start(0).toFixed(2)}–${sourceBuffer.buffered.end(sourceBuffer.buffered.length - 1).toFixed(2)}s` : "empty" } : null);
-      console.log("audioReady:", audioReady);
-      console.log("audioQueue.length:", audioQueue.length);
-      console.log("totalAudioChunksReceived:", totalAudioChunksReceived);
-      console.groupEnd();
-      alert("Audio diagnostics printed to console (F12 → Console)");
-    };
     document.addEventListener("click", resumeAudioOnGesture, { passive: true });
     document.addEventListener("keydown", resumeAudioOnGesture, { passive: true });
     document.addEventListener("touchend", resumeAudioOnGesture, { passive: true });
 
+    // Diagnostics
+    window.audioDebug = () => {
+      console.group("🎵 Audio Diagnostics");
+      console.log("AUDIO_MIME:", AUDIO_MIME, "| supported:", MediaSource?.isTypeSupported?.(AUDIO_MIME));
+      console.log("audioEl:", audioEl
+        ? { paused: audioEl.paused, volume: audioEl.volume, readyState: audioEl.readyState, currentTime: audioEl.currentTime }
+        : null);
+      console.log("mediaSource readyState:", mediaSource?.readyState);
+      console.log("sourceBuffer:", sourceBuffer
+        ? {
+          updating: sourceBuffer.updating, buffered: sourceBuffer.buffered.length > 0
+            ? `${sourceBuffer.buffered.start(0).toFixed(2)}–${sourceBuffer.buffered.end(sourceBuffer.buffered.length - 1).toFixed(2)}s`
+            : "empty"
+        }
+        : null);
+      console.log("audioReady:", audioReady);
+      console.log("audioQueue.length:", audioQueue.length);
+      console.log("totalAudioChunksReceived:", totalAudioChunksReceived);
+      console.groupEnd();
+      alert("Audio diagnostics in console (F12)");
+    };
+
     function drainAudioQueue() {
       if (!sourceBuffer || !audioReady || sourceBuffer.updating || audioQueue.length === 0) return;
 
-      // If we've buffered more than 2 seconds ahead, drop the queue to stay live
+      // Drop queue if too far ahead (prevents unbounded growth / desync)
       if (sourceBuffer.buffered.length > 0 && audioEl) {
         const ahead = sourceBuffer.buffered.end(sourceBuffer.buffered.length - 1) - audioEl.currentTime;
-        if (ahead > 2.0) {
-          console.warn("[Audio] Buffer lead too large (" + ahead.toFixed(2) + "s) — dropping queue");
+        if (ahead > 3.0) {
+          console.warn("[Audio] Buffer lead", ahead.toFixed(2), "s — dropping queue");
           audioQueue.length = 0;
           return;
         }
@@ -570,7 +561,7 @@
         sourceBuffer.appendBuffer(chunk);
       } catch (e) {
         if (e.name === "QuotaExceededError") pruneAudioBuffer();
-        else audioQueue.length = 0; // unrecoverable — clear
+        else { console.error("[Audio] appendBuffer error:", e.name); audioQueue.length = 0; }
       }
     }
 
@@ -583,50 +574,29 @@
       }
     }
 
-    let totalAudioChunksReceived = 0;
-
     function receiveAudioChunk(buf) {
       totalAudioChunksReceived++;
+      if (buf.byteLength < 4) return; // too small to be a valid cluster
 
-      // Guard: skip tiny fragments that can't be valid WebM clusters
-      if (buf.byteLength < 4) {
-        console.warn(`[Audio] Skipping micro-chunk of ${buf.byteLength}B (not a valid WebM cluster)`);
-        return;
-      }
-      // Log the very first chunks in detail
       if (totalAudioChunksReceived <= 5) {
-        console.log(`[Audio] Chunk #${totalAudioChunksReceived} received: ${buf.byteLength} bytes | audioReady=${audioReady} | MSE readyState=${mediaSource?.readyState} | queue=${audioQueue.length}`);
-        // Log first bytes to help debug codec/container issues
         const bytes = new Uint8Array(buf.slice(0, 4));
         const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join(" ");
-        let expectMsg = "";
-        if (AUDIO_MIME && AUDIO_MIME.includes('webm')) {
-          expectMsg = "(should be '1a 45 df a3' for WebM)";
-        } else if (AUDIO_MIME && AUDIO_MIME.includes('mp4')) {
-          expectMsg = "(MP4 ftyp header expected, starts with 00 00 00)";
-        }
-        console.log(`[Audio]   First 4 bytes: ${hex} ${expectMsg}`);
+        const webmOk = hex.startsWith("1a 45 df a3");
+        console.log(`[Audio] Chunk #${totalAudioChunksReceived}: ${buf.byteLength}B | ${hex}${totalAudioChunksReceived === 1 ? (webmOk ? " ✓ WebM" : " ✗ NOT WebM — check codec") : ""}`);
       }
 
-      // Stats
       audioChunkCount++;
       audioByteCount += buf.byteLength;
       const now = performance.now();
       if (now - lastAudioStatTs >= 1000) {
-        const statusMsg = `${audioChunkCount} audio/s · ${(audioByteCount / 1024).toFixed(1)} KB/s · total: ${(totalAudioChunksReceived)} chunks`;
-        audioStatsEl.textContent = statusMsg;
-        console.log(`[Audio] Stats: ${statusMsg} | audioEl.paused=${audioEl?.paused} | audioEl.readyState=${audioEl?.readyState}`);
+        const msg = `${audioChunkCount}/s · ${(audioByteCount / 1024).toFixed(1)} KB/s · ${totalAudioChunksReceived} total`;
+        audioStatsEl.textContent = msg;
+        if (audioEl && !audioEl.paused) setAudioBanner("🔊 Audio streaming live", "#3fb950");
         audioChunkCount = 0; audioByteCount = 0; lastAudioStatTs = now;
-        if (audioEl && !audioEl.paused) setAudioBanner("🔊 Audio streaming (live)", "#3fb950");
       }
 
       if (!audioReady) {
-        if (audioQueue.length < 200) {
-          audioQueue.push(buf);
-          if (audioQueue.length === 1) console.log("[Audio] Buffering (MSE not ready yet)...");
-        } else {
-          console.warn("[Audio] Queue full (200 chunks) — dropping. MSE may be stuck.");
-        }
+        if (audioQueue.length < 300) audioQueue.push(buf);
         return;
       }
       audioQueue.push(buf);
@@ -640,6 +610,7 @@
         audioEl.pause();
         try { if (mediaSource?.readyState === "open") mediaSource.endOfStream(); } catch { }
         audioEl.src = "";
+        audioEl.remove();
         audioEl = null;
       }
       mediaSource = null;
@@ -648,7 +619,7 @@
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // Video rendering — ImageBitmap decoded off main thread, painted on rAF
+    // Video rendering
     // ═══════════════════════════════════════════════════════════════════════════
     let pendingBitmap = null;
     let rafScheduled = false;
@@ -662,15 +633,20 @@
         fpsEl.textContent = frameCount + " fps";
         frameCount = 0; lastFpsTs = now;
       }
-
       createImageBitmap(new Blob([buf], { type: "image/jpeg" }))
         .then(bitmap => {
-          if (pendingBitmap) pendingBitmap.close(); // discard stale frame
-          pendingBitmap = bitmap;
-          if (!rafScheduled) {
-            rafScheduled = true;
-            requestAnimationFrame(paintFrame);
+          // Auto-fit canvas intrinsic size to actual frame dimensions (2× for sharp rendering)
+          if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
+            canvas.width = bitmap.width;
+            canvas.height = bitmap.height;
+            ctx2d.imageSmoothingEnabled = true;
+            ctx2d.imageSmoothingQuality = "high";
+            resolutionEl.textContent = `${bitmap.width}×${bitmap.height}`;
+            console.log(`[Video] Canvas resized to ${bitmap.width}×${bitmap.height}`);
           }
+          if (pendingBitmap) pendingBitmap.close();
+          pendingBitmap = bitmap;
+          if (!rafScheduled) { rafScheduled = true; requestAnimationFrame(paintFrame); }
         })
         .catch(() => { });
     }
@@ -678,7 +654,7 @@
     function paintFrame() {
       rafScheduled = false;
       if (!pendingBitmap) return;
-      ctx2d.drawImage(pendingBitmap, 0, 0, SERVER_W, SERVER_H);
+      ctx2d.drawImage(pendingBitmap, 0, 0, canvas.width, canvas.height);
       pendingBitmap.close();
       pendingBitmap = null;
     }
@@ -691,38 +667,43 @@
       startBtn.disabled = true;
       platformSel.disabled = true;
 
-      if (!AUDIO_MIME) {
-        console.warn("[Audio] no supported MIME; audio will be disabled");
-      } else {
+      // Init audio pipeline (needs user gesture context — we're inside a click handler)
+      if (AUDIO_MIME) {
         initAudio();
-        resumeAudioOnGesture(); // ensure user gesture happens as part of starting
+      } else {
+        console.warn("[Audio] No supported MIME — audio disabled");
+        setAudioBanner("⚠ Audio not supported in this browser", "#f85149");
       }
 
+
       try {
+        const codecForServer = !AUDIO_MIME ? "none"
+          : AUDIO_MIME.includes("webm") ? "opus"
+            : AUDIO_MIME.includes("mp4") ? "aac"
+              : "opus";
+
         const r = await fetch(SERVER_URL + "/start-session", {
           method: "POST",
           headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "1" },
-          body: JSON.stringify({
-            platform: platformSel.value,
-            audioCodec: AUDIO_MIME
-              ? (AUDIO_MIME.includes('webm') ? 'opus' : AUDIO_MIME.includes('mp4') ? 'aac' : 'opus')
-              : 'none'
-          }),
+          body: JSON.stringify({ platform: platformSel.value, audioCodec: codecForServer }),
         });
         if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
 
         const data = await r.json();
         sessionId = data.sessionId;
 
-        // Show which audio method the server is using
         const methodLabels = {
-          pulseaudio: "🎵 PulseAudio",
           opus: "🎵 Opus/WebM",
           aac: "🎵 AAC/MP4",
+          mp3: "🎵 MP3",
+          windows: "🎵 Windows (dshow)",
+          pulseaudio: "🎵 PulseAudio",
           none: "❌ No audio",
         };
         audioMethodEl.textContent = methodLabels[data.audioMethod] || data.audioMethod;
-        if (data.audioMethod === "none") setAudioBanner("⚠ Server has no audio support (PulseAudio not found)", "#f85149");
+        if (data.audioMethod === "none") {
+          setAudioBanner("⚠ Server: no audio device found — install VB-Cable or enable Stereo Mix", "#f85149");
+        }
 
         const proto = SERVER_URL.startsWith("https") ? "wss" : "ws";
         const host = SERVER_URL.replace(/^https?:\/\//, "");
@@ -739,7 +720,10 @@
             else if (type === 0x02) receiveAudioChunk(payload);
             return;
           }
-          try { handleControl(JSON.parse(evt.data)); } catch { }
+          try {
+            const msg = JSON.parse(evt.data);
+            handleControl(msg);
+          } catch { }
         };
 
         ws.onclose = () => { setStatus("disconnected"); cleanup(); };
@@ -770,6 +754,8 @@
       stopBtn.disabled = true;
       scrollBar.style.display = "none";
       stopAudio();
+      canvas.style.display = "none";
+      overlay.classList.remove("hidden");
     }
 
     function handleControl(msg) {
@@ -780,6 +766,13 @@
           overlay.classList.add("hidden");
           stopBtn.disabled = false;
           scrollBar.style.display = "flex";
+          canvas.style.display = "block";
+          // Update logical dimensions if server reports custom viewport size
+          if (msg.width && msg.width !== logicalW) logicalW = msg.width;
+          if (msg.height && msg.height !== logicalH) logicalH = msg.height;
+          lastMouseX = Math.round(logicalW / 2);
+          lastMouseY = Math.round(logicalH / 2);
+          attachCanvasListeners();
           break;
         case "stream-stopped":
           streaming = false;
@@ -806,97 +799,102 @@
       }
     }
 
-    // ── Click ──────────────────────────────────────────────────────────────────
-    canvas.addEventListener("click", (e) => {
-      if (!streaming) return;
-      e.preventDefault();
-      const rect = canvas.getBoundingClientRect();
-      sendInput({
-        type: "click",
-        x: Math.round((e.clientX - rect.left) * (SERVER_W / rect.width)),
-        y: Math.round((e.clientY - rect.top) * (SERVER_H / rect.height)),
-      });
-    });
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Canvas input listeners — attached once when stream starts
+    // ═══════════════════════════════════════════════════════════════════════════
+    let canvasListenersAttached = false;
+    function attachCanvasListeners() {
+      if (canvasListenersAttached) return;
+      canvasListenersAttached = true;
 
-    // ── Mouse wheel (desktop) ─────────────────────────────────────────────────
-    // Send EVERY tick immediately — no batching/debouncing.
-    // Normalise deltaMode so the remote always gets pixel values.
-    canvas.addEventListener("wheel", (e) => {
-      e.preventDefault();
-      if (!streaming) return;
-
-      let dx = e.deltaX, dy = e.deltaY;
-      if (e.deltaMode === 1) { dx *= 40; dy *= 40; }   // line → pixels
-      else if (e.deltaMode === 2) { dx *= 800; dy *= 800; }   // page → pixels
-
-      // Clamp per-tick to avoid teleporting on aggressive flicks
-      dx = Math.max(-400, Math.min(400, dx));
-      dy = Math.max(-400, Math.min(400, dy));
-
-      const rect = canvas.getBoundingClientRect();
-      sendInput({
-        type: "scroll",
-        x: Math.round((e.clientX - rect.left) * (SERVER_W / rect.width)),
-        y: Math.round((e.clientY - rect.top) * (SERVER_H / rect.height)),
-        deltaX: Math.round(dx),
-        deltaY: Math.round(dy),
-      });
-    }, { passive: false });
-
-    // ── Touch (mobile / trackpad) ─────────────────────────────────────────────
-    let touchStartX = 0, touchStartY = 0, touchLastY = 0, touchStartTime = 0;
-
-    canvas.addEventListener("touchstart", (e) => {
-      e.preventDefault();
-      const t = e.touches[0];
-      touchStartX = touchLastY = t.clientX;
-      touchStartY = touchLastY = t.clientY;
-      touchLastY = t.clientY;
-      touchStartTime = Date.now();
-    }, { passive: false });
-
-    canvas.addEventListener("touchmove", (e) => {
-      e.preventDefault();
-      if (!streaming) return;
-      const t = e.touches[0];
-      const dy = (touchLastY - t.clientY) * 2.5; // amplify for natural feel
-      touchLastY = t.clientY;
-      if (Math.abs(dy) < 1) return;
-
-      const rect = canvas.getBoundingClientRect();
-      sendInput({
-        type: "scroll",
-        x: Math.round((touchStartX - rect.left) * (SERVER_W / rect.width)),
-        y: Math.round(SERVER_H / 2),
-        deltaX: 0,
-        deltaY: Math.round(dy),
-      });
-    }, { passive: false });
-
-    canvas.addEventListener("touchend", (e) => {
-      e.preventDefault();
-      if (!streaming) return;
-      const t = e.changedTouches[0];
-      const dt = Date.now() - touchStartTime;
-      const dx = Math.abs(t.clientX - touchStartX);
-      const dy = Math.abs(t.clientY - touchStartY);
-      // Short tap = click
-      if (dt < 300 && dx < 12 && dy < 12) {
+      // Helper: scale CSS coords → server logical pixels
+      function scaleX(clientX) {
         const rect = canvas.getBoundingClientRect();
-        sendInput({
-          type: "click",
-          x: Math.round((touchStartX - rect.left) * (SERVER_W / rect.width)),
-          y: Math.round((touchStartY - rect.top) * (SERVER_H / rect.height)),
-        });
+        return Math.round((clientX - rect.left) * (logicalW / rect.width));
       }
-    }, { passive: false });
+      function scaleY(clientY) {
+        const rect = canvas.getBoundingClientRect();
+        return Math.round((clientY - rect.top) * (logicalH / rect.height));
+      }
 
-    // ── On-screen scroll buttons ──────────────────────────────────────────────
-    // Clicking scrolls once; holding repeats every 80ms.
+      // ── Click ──
+      canvas.addEventListener("click", (e) => {
+        if (!streaming) return;
+        e.preventDefault();
+        sendInput({ type: "click", x: scaleX(e.clientX), y: scaleY(e.clientY) });
+      });
+
+      // ── Mouse wheel ──
+      canvas.addEventListener("wheel", (e) => {
+        e.preventDefault();
+        if (!streaming) return;
+        let dx = e.deltaX, dy = e.deltaY;
+        if (e.deltaMode === 1) { dx *= 40; dy *= 40; }
+        else if (e.deltaMode === 2) { dx *= 800; dy *= 800; }
+        dx = Math.max(-400, Math.min(400, dx));
+        dy = Math.max(-400, Math.min(400, dy));
+        sendInput({
+          type: "scroll",
+          x: scaleX(e.clientX), y: scaleY(e.clientY),
+          deltaX: Math.round(dx), deltaY: Math.round(dy),
+        });
+      }, { passive: false });
+
+      // ── Touch ──
+      let touchStartX = 0, touchStartY = 0, touchLastY = 0, touchStartTime = 0;
+
+      canvas.addEventListener("touchstart", (e) => {
+        e.preventDefault();
+        const t = e.touches[0];
+        touchStartX = t.clientX;
+        touchStartY = touchLastY = t.clientY;
+        touchStartTime = Date.now();
+      }, { passive: false });
+
+      canvas.addEventListener("touchmove", (e) => {
+        e.preventDefault();
+        if (!streaming) return;
+        const t = e.touches[0];
+        const dy = (touchLastY - t.clientY) * 2.5;
+        touchLastY = t.clientY;
+        if (Math.abs(dy) < 1) return;
+        sendInput({
+          type: "scroll",
+          x: scaleX(touchStartX), y: Math.round(logicalH / 2),
+          deltaX: 0, deltaY: Math.round(dy),
+        });
+      }, { passive: false });
+
+      canvas.addEventListener("touchend", (e) => {
+        e.preventDefault();
+        if (!streaming) return;
+        const t = e.changedTouches[0];
+        const dt = Date.now() - touchStartTime;
+        const dx = Math.abs(t.clientX - touchStartX);
+        const dy = Math.abs(t.clientY - touchStartY);
+        if (dt < 300 && dx < 12 && dy < 12) {
+          sendInput({ type: "click", x: scaleX(touchStartX), y: scaleY(touchStartY) });
+        }
+      }, { passive: false });
+
+      // ── Mouse tracking (for keyboard scroll) ──
+      canvas.addEventListener("mousemove", (e) => {
+        lastMouseX = scaleX(e.clientX);
+        lastMouseY = scaleY(e.clientY);
+      }, { passive: true });
+
+      console.log("[Input] Canvas event listeners attached");
+    }
+
+
+
+
+
+    // ── Scroll buttons (hold to repeat) ──
     function makeScrollBtn(id, dy) {
       const btn = document.getElementById(id);
       let iv = null;
-      const fire = () => { if (streaming) sendInput({ type: "scroll", x: Math.round(SERVER_W / 2), y: Math.round(SERVER_H / 2), deltaX: 0, deltaY: dy }); };
+      const fire = () => { if (streaming) sendInput({ type: "scroll", x: Math.round(logicalW / 2), y: Math.round(logicalH / 2), deltaX: 0, deltaY: dy }); };
       const start = (e) => { e.preventDefault(); fire(); iv = setInterval(fire, 80); };
       const stop = () => clearInterval(iv);
       btn.addEventListener("mousedown", start);
@@ -910,27 +908,16 @@
     makeScrollBtn("scrollDownBtn", 300);
     makeScrollBtn("scrollBotBtn", 3000);
 
-    // ── Keyboard ──────────────────────────────────────────────────────────────
-    // Track last mouse position over canvas for scroll targeting
-    let lastMouseX = Math.round(SERVER_W / 2);
-    let lastMouseY = Math.round(SERVER_H / 2);
-    canvas.addEventListener("mousemove", (e) => {
-      const rect = canvas.getBoundingClientRect();
-      lastMouseX = Math.round((e.clientX - rect.left) * (SERVER_W / rect.width));
-      lastMouseY = Math.round((e.clientY - rect.top) * (SERVER_H / rect.height));
-    }, { passive: true });
+    // ── Keyboard ──
 
     document.addEventListener("keydown", (e) => {
       if (document.activeElement === document.getElementById("textInput") || !streaming) return;
-
-      // Arrow keys → scroll instead of sending as keydown (more natural)
       const scrollKeys = { ArrowDown: 120, ArrowUp: -120, PageDown: 600, PageUp: -600 };
       if (scrollKeys[e.key] !== undefined) {
         e.preventDefault();
         sendInput({ type: "scroll", x: lastMouseX, y: lastMouseY, deltaX: 0, deltaY: scrollKeys[e.key] });
         return;
       }
-
       e.preventDefault();
       if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
         sendInput({ type: "keypress", key: e.key });

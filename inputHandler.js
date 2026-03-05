@@ -39,37 +39,61 @@ async function handleKey(page, data) {
 }
 
 /**
+ * Force-unmute all audio/video elements on the page.
+ * Also tries to resume any suspended AudioContext instances.
+ * Called when the client clicks "Force Unmute" button.
+ */
+async function handleForceUnmute(page) {
+  await page.evaluate(() => {
+    // Unmute all media elements
+    document.querySelectorAll("audio, video").forEach((el) => {
+      try { el.muted  = false; } catch {}
+      try { el.volume = 1.0;   } catch {}
+      // Also try clicking the mute button if one exists on the element
+      try {
+        if (el.paused) el.play().catch(() => {});
+      } catch {}
+    });
+
+    // Resume any suspended AudioContext (common on Instagram / TikTok)
+    if (window.__audioContexts) {
+      window.__audioContexts.forEach((ac) => {
+        if (ac.state === "suspended") ac.resume().catch(() => {});
+      });
+    }
+
+    // Try the global AudioContext if accessible
+    ["AudioContext", "webkitAudioContext"].forEach((name) => {
+      try {
+        // Can't enumerate instances, but some sites expose them globally
+      } catch {}
+    });
+
+    console.log("[RemoteBrowser] Force unmute executed");
+  }).catch(() => {});
+}
+
+/**
  * Three-layer scroll strategy:
  *
  * Layer 1 — page.mouse.move + page.mouse.wheel
- *   Moves the mouse to the target coordinates first (critical — wheel fires at
- *   the last mouse position, which is (0,0) if the mouse was never moved).
- *   Works for standard overflow containers.
- *
  * Layer 2 — WheelEvent dispatch via page.evaluate
- *   Dispatches a native WheelEvent on the element under the pointer.
- *   Catches React/Vue synthetic scroll handlers used by Instagram, TikTok, etc.
- *
  * Layer 3 — scrollBy on the nearest scrollable ancestor
- *   Walks up the DOM from the target element and calls .scrollBy() on the first
- *   ancestor with overflow:auto/scroll/overlay and scrollable content.
- *   Most reliable catch-all for custom scroll containers.
  */
 async function handleScroll(page, data) {
   const dx = data.deltaX || 0;
   const dy = data.deltaY || 0;
-  // Use provided coordinates or default to viewport centre
-  const x = typeof data.x === "number" ? data.x : 195;
-  const y = typeof data.y === "number" ? data.y : 422;
+  const x  = typeof data.x === "number" ? data.x : 195;
+  const y  = typeof data.y === "number" ? data.y : 422;
 
-  // Layer 1: position mouse then fire CDP wheel
+  // Layer 1: move mouse then fire wheel
   await page.mouse.move(x, y);
   await page.mouse.wheel(dx, dy);
 
-  // Layers 2 & 3: JS-level scroll
+  // Layers 2 & 3: JS scroll
   await page.evaluate(
     ({ x, y, dx, dy }) => {
-      // Layer 2: synthetic WheelEvent (React/Vue handlers)
+      // Layer 2: synthetic WheelEvent
       const target = document.elementFromPoint(x, y);
       if (target) {
         target.dispatchEvent(
@@ -81,11 +105,11 @@ async function handleScroll(page, data) {
             cancelable: true,
             clientX: x,
             clientY: y,
-          }),
+          })
         );
       }
 
-      // Layer 3: direct .scrollBy on nearest scrollable ancestor
+      // Layer 3: direct scrollBy on nearest scrollable ancestor
       function findScrollable(el) {
         if (!el || el === document.body || el === document.documentElement)
           return null;
@@ -107,7 +131,7 @@ async function handleScroll(page, data) {
         window.scrollBy({ top: dy, left: dx, behavior: "auto" });
       }
     },
-    { x, y, dx, dy },
+    { x, y, dx, dy }
   );
 }
 
@@ -144,6 +168,9 @@ async function handleInput(page, data) {
         break;
       case "mousemove":
         await handleMouseMove(page, data);
+        break;
+      case "__unmute__":
+        await handleForceUnmute(page);
         break;
       default:
         console.warn("[Input] Unknown type:", data.type);
