@@ -5,8 +5,8 @@
 
 const DEFAULT_OPTIONS = {
   format: "jpeg",
-  quality: 100, // Maximum quality for mobile app rendering - best visual fidelity
-  everyNthFrame: 1,
+  quality: 80, // 80 provides a great balance of visual fidelity and low latency/bandwidth
+  everyNthFrame: 1, // Chrome sends delta frames only
 };
 
 /**
@@ -22,18 +22,22 @@ async function startScreencast(page, onFrame, options = {}) {
 
   cdpSession.on("Page.screencastFrame", async (params) => {
     try {
-      // Acknowledge the frame so Chrome sends the next one
-      await cdpSession.send("Page.screencastFrameAck", {
-        sessionId: params.sessionId,
-      });
-
-      // Convert base64 frame data to Buffer
+      // 1. Convert base64 frame data to Buffer IMMEDIATELY
       const frameBuffer = Buffer.from(params.data, "base64");
-      console.log(
-        `[CDP] Received frame from Chrome, size: ${frameBuffer.length}`,
-      ); // optional, could be noisy
 
+      // 2. Send the frame to the client as fast as possible without waiting for Chrome
       onFrame(frameBuffer, params.metadata);
+
+      // 3. Acknowledge the frame asynchronously so Chrome sends the next one.
+      // We PURPOSEFULLY DO NOT AWAIT this so we don't delay processing the current frame and increase latency!
+      cdpSession.send("Page.screencastFrameAck", {
+        sessionId: params.sessionId,
+      }).catch((e) => {
+        // Only log actual errors, not target closed
+        if (!e.message.includes("Target closed") && !e.message.includes("Session closed")) {
+          console.error("Ack error:", e.message);
+        }
+      });
     } catch (err) {
       // Session may have been closed
       if (
@@ -69,7 +73,7 @@ async function startScreencast(page, onFrame, options = {}) {
       document.body.appendChild(el);
       setTimeout(() => el.remove(), 100);
     })
-    .catch(() => {});
+    .catch(() => { });
 
   return cdpSession;
 }

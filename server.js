@@ -31,9 +31,9 @@ app.get("/", (req, res) => {
 app.post("/start-session", async (req, res) => {
   let context, page;
   try {
-    const { platform } = req.body;
+    const { platform, width, height } = req.body;
     console.log(`\n--- New Flow: Start Session ---`);
-    console.log(`[API] /start-session requested for platform: ${platform}`);
+    console.log(`[API] /start-session requested for platform: ${platform}, width: ${width || 'default'}, height: ${height || 'default'}`);
 
     const allowed = {
       facebook: "https://www.facebook.com/",
@@ -49,13 +49,13 @@ app.post("/start-session", async (req, res) => {
 
     const browser = getBrowser();
 
-    // Mobile-optimized viewport (iPhone 13 standard)
-    const MOBILE_WIDTH = 390;
-    const MOBILE_HEIGHT = 844;
+    // Dynamically adjust viewport dimensions (fallback to iPhone 13 standard)
+    const viewWidth = width ? parseInt(width, 10) : 390;
+    const viewHeight = height ? parseInt(height, 10) : 844;
 
     context = await browser.newContext({
-      viewport: { width: MOBILE_WIDTH, height: MOBILE_HEIGHT },
-      deviceScaleFactor: 2, // Simulate Retina display
+      viewport: { width: viewWidth, height: viewHeight },
+      deviceScaleFactor: 1, // CRITICAL FIX: Changed 2 to 1. Drawing 2x pixels on headless Chrome taxes the CPU deeply, increasing latency.
       locale: "en-US",
       extraHTTPHeaders: {
         "Accept-Language": "en-US,en;q=0.9",
@@ -76,28 +76,28 @@ app.post("/start-session", async (req, res) => {
         content:
           "html { filter: brightness(1.1) contrast(1.05) saturate(1.1) !important; }",
       })
-      .catch(() => {});
+      .catch(() => { });
 
     const sessionId = uuidv4();
     createSession(sessionId, context, page, {
-      width: MOBILE_WIDTH,
-      height: MOBILE_HEIGHT,
+      width: viewWidth,
+      height: viewHeight,
     });
 
     res.json({
       sessionId,
-      width: MOBILE_WIDTH,
-      height: MOBILE_HEIGHT,
-      quality: 100,
+      width: viewWidth,
+      height: viewHeight,
+      quality: 80, // Restored to 80 to maintain good visual fidelity. Latency is still optimized via deviceScaleFactor & async CDP acks.
       format: "jpeg",
     });
     console.log(
-      `[API] Session created: ${sessionId} | Viewport: ${MOBILE_WIDTH}x${MOBILE_HEIGHT} | Quality: 100 (high fidelity)`,
+      `[API] Session created: ${sessionId} | Viewport: ${viewWidth}x${viewHeight} | Quality: 80 (visual balance restored)`,
     );
   } catch (error) {
     console.error(`[API] Error starting session:`, error.message);
-    if (page) await page.close().catch(() => {});
-    if (context) await context.close().catch(() => {});
+    if (page) await page.close().catch(() => { });
+    if (context) await context.close().catch(() => { });
     res
       .status(500)
       .json({ error: "Failed to start session", details: error.message });
@@ -195,17 +195,14 @@ wss.on("connection", (ws, req) => {
 
       try {
         // Retrieve the actual viewport size from the page/context if possible, or use hardcoded mobile defaults
-        // Since we set viewport in newContext, we should use that.
-        // For now, we know it's mobile (390x844) based on our implementation, but let's be robust.
-        // We'll pass the resolution that matches the desired output.
+        const streamWidth = session.viewport?.width || 390;
+        const streamHeight = session.viewport?.height || 844;
 
-        // Mobile-optimized streaming options
-        // 390x844 is the average/standard mobile viewport (iPhone 13 standard)
         const streamOptions = {
-          maxWidth: 390,
-          maxHeight: 844,
-          quality: 100, // Maximum quality for best visual fidelity in mobile app
-          everyNthFrame: 1,
+          maxWidth: streamWidth,
+          maxHeight: streamHeight,
+          quality: 80, // Restored to 80.
+          everyNthFrame: 1, // Chrome screencast inherently only sends frames when screen changes
         };
 
         const cdpSession = await startScreencast(

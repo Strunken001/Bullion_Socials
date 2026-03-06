@@ -4,7 +4,7 @@ let browser;
 
 async function initBrowser() {
   browser = await chromium.launch({
-    headless: true,
+    headless: false,
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
@@ -14,6 +14,7 @@ async function initBrowser() {
       '--disable-dev-shm-usage', // Extremely important to prevent out-of-memory crashes when multiple users connect
       '--disable-gpu',           // Helps reduce memory consumption for headless loads
       '--no-zygote',
+      '--disable-smooth-scrolling', // Add this to stop Chrome from rendering 30 transitional frames per scroll, which heavily clogs WebSockets and causes severe interaction latency.
       '--lang=en-US'        // Force browser UI language to English
     ]
   });
