@@ -4,9 +4,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Remote Browser Control (Mobile)</title>
+  <title>Remote Mobile Browser</title>
   <style>
-    * {
+    *,
+    *::before,
+    *::after {
       margin: 0;
       padding: 0;
       box-sizing: border-box;
@@ -20,36 +22,40 @@
       display: flex;
       flex-direction: column;
       align-items: center;
+      overflow-x: hidden;
     }
 
     .header {
       width: 100%;
-      padding: 16px 24px;
+      padding: 10px 16px;
       background: #161820;
       border-bottom: 1px solid #2d2f3a;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 16px;
+      gap: 10px;
       position: sticky;
       top: 0;
-      z-index: 10;
+      z-index: 20;
+      flex-wrap: wrap;
     }
 
     .header h1 {
-      font-size: 18px;
+      font-size: 15px;
       font-weight: 600;
       color: #58a6ff;
+      white-space: nowrap;
     }
 
     .controls {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 8px;
+      flex-wrap: wrap;
     }
 
     select {
-      padding: 8px 12px;
+      padding: 6px 10px;
       background: #21262d;
       border: 1px solid #30363d;
       color: #c9d1d9;
@@ -62,12 +68,36 @@
       border-color: #58a6ff;
     }
 
-    .status {
-      display: flex;
-      align-items: center;
-      gap: 8px;
+    button {
+      padding: 6px 14px;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      background: #21262d;
+      color: #c9d1d9;
       font-size: 13px;
-      color: #8b949e;
+      cursor: pointer;
+      transition: all .15s;
+      white-space: nowrap;
+    }
+
+    button:hover {
+      background: #30363d;
+      border-color: #8b949e;
+    }
+
+    button.primary {
+      background: #238636;
+      border-color: #2ea043;
+      color: #fff;
+    }
+
+    button.primary:hover {
+      background: #2ea043;
+    }
+
+    button:disabled {
+      opacity: .45;
+      cursor: not-allowed;
     }
 
     .status-dot {
@@ -75,7 +105,8 @@
       height: 8px;
       border-radius: 50%;
       background: #f85149;
-      transition: background 0.3s;
+      flex-shrink: 0;
+      transition: background .3s;
     }
 
     .status-dot.connected {
@@ -91,85 +122,96 @@
 
       0%,
       100% {
-        opacity: 1;
+        opacity: 1
       }
 
       50% {
-        opacity: 0.4;
+        opacity: .4
       }
     }
 
-    button {
-      padding: 8px 16px;
-      border: 1px solid #30363d;
-      border-radius: 6px;
-      background: #21262d;
-      color: #c9d1d9;
-      font-size: 13px;
-      cursor: pointer;
-      transition: all 0.15s;
-    }
-
-    button:hover {
-      background: #30363d;
-      border-color: #8b949e;
-    }
-
-    button.primary {
-      background: #238636;
-      border-color: #2ea043;
-      color: white;
-    }
-
-    button.primary:hover {
-      background: #2ea043;
-    }
-
-    button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-
-    /* Mobile Frame Styling */
+    /* IMPORTANT: The frame is sized exactly to match the server viewport */
     .mobile-frame {
-      margin: 24px auto;
-      border: 12px solid #2d2f3a;
-      border-radius: 36px;
+      margin: 16px auto 0;
+      border: 10px solid #2d2f3a;
+      border-radius: 32px;
       background: #000;
       overflow: hidden;
       position: relative;
-      box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
+      box-shadow: 0 0 40px rgba(0, 0, 0, .6);
+      flex-shrink: 0;
     }
 
-    .canvas-container {
-      position: relative;
-      width: 100%;
-      height: 100%;
-      background: #000;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    canvas {
+    /* Video fills frame exactly — NO object-fit:contain (causes coordinate offset bugs) */
+    video {
       display: block;
       width: 100%;
       height: 100%;
-      cursor: touch;
-      /* Mobile feel */
+      touch-action: none;
+      cursor: default;
+      -webkit-user-select: none;
+      user-select: none;
+      /* object-fit: fill ensures video fills frame with no letterboxing */
+      object-fit: fill;
+      background: #000;
+    }
+
+    .overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, .85);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #8b949e;
+      font-size: 15px;
+      text-align: center;
+      padding: 20px;
+      z-index: 5;
+    }
+
+    .overlay.hidden {
+      display: none;
+    }
+
+    .info-bar {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      justify-content: center;
+      padding: 6px 16px;
+      font-size: 11px;
+      color: #484f58;
+      width: 100%;
+      max-width: 480px;
+    }
+
+    .scroll-bar {
+      display: flex;
+      gap: 8px;
+      padding: 6px 16px 4px;
+      width: 100%;
+      max-width: 480px;
+      justify-content: center;
+    }
+
+    .scroll-bar button {
+      font-size: 12px;
+      padding: 5px 12px;
     }
 
     .input-bar {
-      width: 100%;
-      max-width: 600px;
-      padding: 0 16px 24px;
       display: flex;
       gap: 8px;
+      padding: 6px 16px 16px;
+      width: 100%;
+      max-width: 480px;
     }
 
     .input-bar input {
       flex: 1;
-      padding: 10px 14px;
+      padding: 9px 12px;
       background: #161820;
       border: 1px solid #30363d;
       border-radius: 6px;
@@ -182,36 +224,34 @@
       border-color: #58a6ff;
     }
 
-    .overlay {
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0, 0, 0, 0.7);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      color: #8b949e;
-      font-size: 16px;
-      text-align: center;
-      padding: 20px;
-      z-index: 5;
-    }
-
-    .overlay.hidden {
-      display: none;
-    }
-
-    .info-bar {
+    #debugPanel {
       width: 100%;
-      max-width: 600px;
-      padding: 0 16px 8px;
-      display: flex;
-      justify-content: space-between;
-      font-size: 12px;
-      color: #484f58;
+      max-width: 480px;
+      padding: 4px 16px 8px;
+      font-size: 11px;
+      color: #6e7681;
+      font-family: monospace;
+      line-height: 1.6;
+    }
+
+    #debugPanel.err {
+      color: #f85149;
+    }
+
+    /* Audio indicator */
+    #audioIndicator {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #484f58;
+      flex-shrink: 0;
+      transition: background .3s;
+      title: "Audio";
+    }
+
+    #audioIndicator.active {
+      background: #3fb950;
+      animation: pulse 0.5s infinite;
     }
   </style>
 </head>
@@ -219,483 +259,683 @@
 <body>
 
   <div class="header">
-    <h1>📱 Remote Browser - Auto Responsive</h1>
+    <h1>📱 Remote Browser</h1>
     <div class="controls">
       <select id="platformSelect">
-        <option value="facebook">Facebook</option>
         <option value="instagram">Instagram</option>
-        <option value="x">Twitter / X</option>
         <option value="tiktok">TikTok</option>
+        <option value="youtube">YouTube</option>
+        <option value="facebook">Facebook</option>
+        <option value="x">Twitter / X</option>
         <option value="linkedin">LinkedIn</option>
+        <option value="discord">Discord</option>
+        <option value="messenger">Messenger</option>
+        <option value="telegram">Telegram</option>
+        <option value="google">Google</option>
       </select>
-      <div class="status">
-        <div class="status-dot" id="statusDot"></div>
-      </div>
+      <div class="status-dot" id="statusDot" title="Connection"></div>
+      <div id="audioIndicator" title="Audio"></div>
       <button class="primary" id="startBtn" onclick="startSession()">Start</button>
       <button id="stopBtn" onclick="stopSession()" disabled>Stop</button>
     </div>
   </div>
 
   <div class="mobile-frame" id="mobileFrame">
-    <div class="canvas-container">
-      <canvas id="screen"></canvas>
-      <div class="overlay" id="overlay">Select a platform and click Start</div>
-    </div>
+    <video id="screen" autoplay playsinline muted></video>
+    <div class="overlay" id="overlay">Select a platform and click Start</div>
   </div>
 
   <div class="info-bar">
-    <span id="resolution">Auto</span>
-    <span id="fps">0 fps</span>
+    <span id="resolutionEl">—</span>
+    <span id="fpsEl">— fps</span>
+    <span id="connStateEl">disconnected</span>
+    <span id="audioStateEl">audio: off</span>
+  </div>
+
+  <!-- <div class="scroll-bar" id="scrollBar" style="display:none">
+    <button id="scrollTopBtn">▲▲ Top</button>
+    <button id="scrollUpBtn">▲ Up</button>
+    <button id="scrollDownBtn">▼ Down</button>
+    <button id="scrollBotBtn">▼▼ Bot</button>
   </div>
 
   <div class="input-bar">
-    <input type="text" id="textInput" placeholder="Type text..."
-      onkeydown="if(event.key==='Enter'){sendText(); event.preventDefault();}">
+    <input id="textInput" type="text" placeholder="Type text to send…"
+      onkeydown="if(event.key==='Enter'){sendText();event.preventDefault();}">
     <button onclick="sendText()">Send</button>
-  </div>
+  </div> -->
+
+  <div id="debugPanel">WebRTC: idle</div>
 
   <script>
-    // ===================== Configuration =====================
-    const SERVER_URL = "https://felix-orthomorphic-manageably.ngrok-free.dev";
+    // ─── Config ──────────────────────────────────────────────────────────────
+    const SERVER_URL = (() => {
+      const o = window.location.origin;
+      return o.includes(":3000") ? o : "http://localhost:3000";
+    })();
 
-    // Server renders at mobile-optimized resolution
-    const SERVER_WIDTH = 390;
-    const SERVER_HEIGHT = 844;
+    // These MUST match the server viewport exactly
+    const SERVER_W = 390;
+    const SERVER_H = 844;
 
-    // ===================== Client-Side Responsive Configuration =====================
-    // The client automatically detects its own viewport and scales appropriately
-    // No device selection needed - works on any screen size!
+    // Display size — mobile phone feel
+    const DISPLAY_W = 390;
+    const DISPLAY_H = 700;
 
-    let DISPLAY_WIDTH = window.innerWidth;
-    let DISPLAY_HEIGHT = window.innerHeight;
+    // ─── DOM ─────────────────────────────────────────────────────────────────
+    const videoEl = document.getElementById("screen");
+    const overlay = document.getElementById("overlay");
+    const statusDot = document.getElementById("statusDot");
+    const audioIndicator = document.getElementById("audioIndicator");
+    const startBtn = document.getElementById("startBtn");
+    const stopBtn = document.getElementById("stopBtn");
+    const platformSel = document.getElementById("platformSelect");
+    const mobileFrame = document.getElementById("mobileFrame");
+    const scrollBar = document.getElementById("scrollBar");
+    const fpsEl = document.getElementById("fpsEl");
+    const resolutionEl = document.getElementById("resolutionEl");
+    const connStateEl = document.getElementById("connStateEl");
+    const audioStateEl = document.getElementById("audioStateEl");
+    const debugPanel = document.getElementById("debugPanel");
 
-    // Calculate max canvas size based on container
-    const MAX_CANVAS_WIDTH = Math.min(DISPLAY_WIDTH - 40, 800); // 40px margin
-    const MAX_CANVAS_HEIGHT = Math.min(DISPLAY_HEIGHT - 200, 1200); // 200px for UI
+    // ─── Sizing — set once, don't change dynamically ─────────────────────────
+    mobileFrame.style.width = DISPLAY_W + "px";
+    mobileFrame.style.height = DISPLAY_H + "px";
 
-    // ===================== State =====================
-    let sessionId = null;
-    let ws = null;
-    let streaming = false;
+    // ─── State ────────────────────────────────────────────────────────────────
+    let sessionId = null, ws = null, streaming = false;
+    let logicalW = SERVER_W, logicalH = SERVER_H;
+    let lastMouseX = Math.round(SERVER_W / 2), lastMouseY = Math.round(SERVER_H / 2);
+    let canvasListenersAttached = false;
+    let peerConnection = null;
 
-    // FPS tracking
+    // ─── FPS counter ──────────────────────────────────────────────────────────
     let frameCount = 0;
-    let lastFpsTime = performance.now();
+    setInterval(() => { fpsEl.textContent = frameCount + " fps"; frameCount = 0; }, 1000);
 
-    // DOM elements
-    const canvas = document.getElementById('screen');
-    const ctx = canvas.getContext('2d');
-    const overlay = document.getElementById('overlay');
-    const statusDot = document.getElementById('statusDot');
-    const startBtn = document.getElementById('startBtn');
-    const stopBtn = document.getElementById('stopBtn');
-    const fpsDisplay = document.getElementById('fps');
-    const platformSelect = document.getElementById('platformSelect');
-    const resolutionDisplay = document.getElementById('resolution');
-    const mobileFrame = document.getElementById('mobileFrame');
-
-    // ===================== Responsive Canvas Setup =====================
-
-    function setupResponsiveCanvas() {
-      // Calculate canvas size maintaining aspect ratio
-      const serverAspectRatio = SERVER_WIDTH / SERVER_HEIGHT;
-
-      let canvasWidth, canvasHeight;
-
-      // Calculate based on max width or height constraint
-      if (MAX_CANVAS_WIDTH / MAX_CANVAS_HEIGHT > serverAspectRatio) {
-        // Height is constraining factor
-        canvasHeight = MAX_CANVAS_HEIGHT;
-        canvasWidth = canvasHeight * serverAspectRatio;
-      } else {
-        // Width is constraining factor
-        canvasWidth = MAX_CANVAS_WIDTH;
-        canvasHeight = canvasWidth / serverAspectRatio;
-      }
-
-      // Set canvas internal resolution (always server resolution for quality)
-      canvas.width = SERVER_WIDTH;
-      canvas.height = SERVER_HEIGHT;
-
-      // Set canvas display size (responsive to screen)
-      canvas.style.width = canvasWidth + 'px';
-      canvas.style.height = canvasHeight + 'px';
-
-      // Update frame container
-      mobileFrame.style.width = canvasWidth + 'px';
-      mobileFrame.style.height = canvasHeight + 'px';
-
-      // Update display info
-      resolutionDisplay.textContent = `${SERVER_WIDTH} × ${SERVER_HEIGHT}`;
-
-      console.log(`Canvas: Internal ${SERVER_WIDTH}×${SERVER_HEIGHT}, Display ${canvasWidth.toFixed(0)}×${canvasHeight.toFixed(0)}`);
+    // ─── Debug ────────────────────────────────────────────────────────────────
+    function dbg(msg, isErr) {
+      console.log(msg);
+      debugPanel.textContent = msg;
+      debugPanel.className = isErr ? "err" : "";
     }
 
-    // Setup on load
-    setupResponsiveCanvas();
+    // ─── Coordinate scaling ───────────────────────────────────────────────────
+    // CRITICAL FIX: With object-fit:fill, the video always fills the element
+    // exactly, so we simply scale by element size vs logical size.
+    // No letterbox offset needed.
+    function getVideoRect() {
+      return videoEl.getBoundingClientRect();
+    }
 
-    // Recalculate on window resize
-    window.addEventListener('resize', () => {
-      DISPLAY_WIDTH = window.innerWidth;
-      DISPLAY_HEIGHT = window.innerHeight;
-      setupResponsiveCanvas();
-    });
+    function scaleX(clientX) {
+      const r = getVideoRect();
+      return Math.round(((clientX - r.left) / r.width) * logicalW);
+    }
 
-    // ===================== Session Management =====================
+    function scaleY(clientY) {
+      const r = getVideoRect();
+      return Math.round(((clientY - r.top) / r.height) * logicalH);
+    }
 
+    function clampX(x) { return Math.max(0, Math.min(logicalW - 1, x)); }
+    function clampY(y) { return Math.max(0, Math.min(logicalH - 1, y)); }
+
+    // ─── WebRTC ───────────────────────────────────────────────────────────────
+    function createPeerConnection() {
+      if (peerConnection) {
+        try { peerConnection.close(); } catch (_) { }
+      }
+
+      peerConnection = new RTCPeerConnection({
+        iceServers: [
+          { urls: "stun:stun.l.google.com:19302" },
+          { urls: "stun:stun1.l.google.com:19302" },
+          { urls: "stun:stun2.l.google.com:19302" },
+        ],
+      });
+
+      // MUST be registered before createOffer
+      peerConnection.ontrack = (event) => {
+        dbg("[WebRTC] Track: " + event.track.kind);
+
+        if (!videoEl.srcObject) {
+          videoEl.srcObject = new MediaStream();
+        }
+        videoEl.srcObject.addTrack(event.track);
+
+        if (event.track.kind === "audio") {
+          // Unmute video element to hear audio
+          videoEl.muted = false;
+          audioStateEl.textContent = "audio: on";
+          audioIndicator.classList.add("active");
+        }
+
+        if (event.track.kind === "video") {
+          if ("requestVideoFrameCallback" in videoEl) {
+            const tick = () => { frameCount++; videoEl.requestVideoFrameCallback(tick); };
+            videoEl.requestVideoFrameCallback(tick);
+          }
+
+          function doPlay() {
+            return videoEl.play().then(() => {
+              dbg("[WebRTC] ▶ Playing");
+              overlay.classList.add("hidden");
+              if (videoEl.videoWidth > 0) {
+                resolutionEl.textContent = `${videoEl.videoWidth}×${videoEl.videoHeight}`;
+              }
+            });
+          }
+
+          doPlay().catch(() => {
+            const onCanPlay = () => {
+              videoEl.removeEventListener("canplay", onCanPlay);
+              doPlay().catch(() => showPlayButton());
+            };
+            videoEl.addEventListener("canplay", onCanPlay);
+            setTimeout(() => {
+              videoEl.removeEventListener("canplay", onCanPlay);
+              doPlay().catch(() => showPlayButton());
+            }, 1200);
+          });
+        }
+      };
+
+      peerConnection.onconnectionstatechange = () => {
+        const s = peerConnection.connectionState;
+        connStateEl.textContent = s;
+        dbg("[WebRTC] " + s, s === "failed" || s === "disconnected");
+      };
+
+      peerConnection.oniceconnectionstatechange = () => {
+        console.log("[ICE]", peerConnection.iceConnectionState);
+      };
+
+      // Add transceivers BEFORE creating offer — recvonly for both
+      peerConnection.addTransceiver("video", { direction: "recvonly" });
+      peerConnection.addTransceiver("audio", { direction: "recvonly" });
+
+      // Prefer VP8 (most compatible with @roamhq/wrtc)
+      const caps = RTCRtpReceiver.getCapabilities("video");
+      if (caps) {
+        const vp8 = caps.codecs.filter(c => c.mimeType === "video/VP8");
+        const rest = caps.codecs.filter(c => c.mimeType !== "video/VP8");
+        if (vp8.length) {
+          const vt = peerConnection.getTransceivers().find(t => t.receiver.track.kind === "video");
+          if (vt) {
+            try { vt.setCodecPreferences([...vp8, ...rest]); } catch (_) { }
+          }
+        }
+      }
+    }
+
+    function showPlayButton() {
+      dbg("[WebRTC] Autoplay blocked — tap to play");
+      overlay.classList.remove("hidden");
+      overlay.innerHTML = `
+      <p style="margin-bottom:12px;color:#c9d1d9;">Tap to start stream</p>
+      <button onclick="manualPlay()" style="padding:12px 24px;font-size:15px;
+        background:#238636;border:none;border-radius:8px;color:#fff;cursor:pointer">
+        ▶ Play Stream
+      </button>`;
+    }
+
+    function manualPlay() {
+      videoEl.muted = false;
+      videoEl.play()
+        .then(() => overlay.classList.add("hidden"))
+        .catch(console.error);
+    }
+
+    // ─── Session ──────────────────────────────────────────────────────────────
     async function startSession() {
-      setStatus('connecting');
+      setStatus("connecting");
       startBtn.disabled = true;
-      platformSelect.disabled = true;
+      platformSel.disabled = true;
+      dbg("Connecting…");
 
       try {
-        const platform = platformSelect.value;
-
-        // 1. Create session via REST (no device info needed!)
-        const baseUrl = SERVER_URL || window.location.origin;
-        const response = await fetch(baseUrl + "/start-session", {
+        const r = await fetch(SERVER_URL + "/start-session", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "ngrok-skip-browser-warning": "69420"
+            "ngrok-skip-browser-warning": "1",
           },
-          body: JSON.stringify({ platform: platform })
+          body: JSON.stringify({ platform: platformSel.value }),
         });
+        if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
 
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${await response.text()}`);
-        }
-
-        const data = await response.json();
+        const data = await r.json();
         sessionId = data.sessionId;
+        if (data.width) logicalW = data.width;
+        if (data.height) logicalH = data.height;
+        dbg("[Session] " + sessionId);
 
-        console.log("Session created:", sessionId);
+        const proto = SERVER_URL.startsWith("https") ? "wss" : "ws";
+        const host = SERVER_URL.replace(/^https?:\/\//, "");
+        ws = new WebSocket(`${proto}://${host}`);
 
-        // 2. Connect WebSocket
-        const wsProtocol = baseUrl.startsWith('https') ? 'wss' : 'ws';
-        const wsHost = baseUrl.replace(/^https?:\/\//, '');
-        ws = new WebSocket(`${wsProtocol}://${wsHost}`);
-        ws.binaryType = 'arraybuffer';
+        ws.onopen = async () => {
+          dbg("[WS] Connected");
 
-        ws.onopen = () => {
-          console.log("WebSocket connected");
+          createPeerConnection();
 
-          // 3. Request stream start
+          const offer = await peerConnection.createOffer();
+          await peerConnection.setLocalDescription(offer);
+
+          // Wait for ICE gathering — increased timeout
+          await new Promise(resolve => {
+            if (peerConnection.iceGatheringState === "complete") { resolve(); return; }
+            const fn = () => {
+              if (peerConnection.iceGatheringState === "complete") {
+                peerConnection.removeEventListener("icegatheringstatechange", fn);
+                resolve();
+              }
+            };
+            peerConnection.addEventListener("icegatheringstatechange", fn);
+            setTimeout(() => {
+              peerConnection.removeEventListener("icegatheringstatechange", fn);
+              resolve();
+            }, 3000); // Increased from 2000ms
+          });
+
           ws.send(JSON.stringify({
-            sessionId: sessionId,
-            type: "start-stream"
+            sessionId,
+            type: "start-stream",
+            offerSdp: peerConnection.localDescription.sdp,
           }));
+          dbg("[WebRTC] Offer sent");
         };
 
-        ws.onmessage = (event) => {
-          if (event.data instanceof ArrayBuffer) {
-            renderFrame(event.data);
+        ws.onmessage = async (evt) => {
+          let msg;
+          try { msg = JSON.parse(evt.data); } catch { return; }
+
+          if (msg.type === "webrtc-answer") {
+            const sdp = typeof msg.sdpAnswer === "string"
+              ? msg.sdpAnswer
+              : msg.sdpAnswer?.sdp;
+            if (!sdp) { dbg("Empty SDP!", true); return; }
+            try {
+              await peerConnection.setRemoteDescription({ type: "answer", sdp });
+              dbg("[WebRTC] Answer accepted ✓");
+            } catch (e) {
+              dbg("[WebRTC] setRemoteDescription: " + e.message, true);
+            }
             return;
           }
 
-          try {
-            const msg = JSON.parse(event.data);
-            handleControlMessage(msg);
-          } catch (err) {
-            console.warn("Unparseable message:", event.data);
-          }
+          handleControl(msg);
         };
 
-        ws.onclose = () => {
-          console.log("WebSocket disconnected");
-          setStatus('disconnected');
-          cleanupSession();
-        };
-
-        ws.onerror = (err) => {
-          console.error("WebSocket error:", err);
-          setStatus('disconnected');
-          cleanupSession();
-        };
+        ws.onclose = () => { setStatus("disconnected"); cleanup(); };
+        ws.onerror = () => { setStatus("disconnected"); cleanup(); };
 
       } catch (err) {
-        console.error("Failed to start session:", err);
-        setStatus('disconnected');
-        cleanupSession();
-        alert("Failed to start session: " + err.message);
+        dbg("Error: " + err.message, true);
+        setStatus("disconnected");
+        cleanup();
+        alert("Failed to start: " + err.message);
       }
-    }
-
-    function cleanupSession() {
-      streaming = false;
-      startBtn.disabled = false;
-      platformSelect.disabled = false;
-      stopBtn.disabled = true;
     }
 
     function stopSession() {
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-          sessionId: sessionId,
-          type: "stop-stream"
-        }));
+      if (ws?.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ sessionId, type: "stop-stream" }));
         ws.close();
       }
-      overlay.classList.remove('hidden');
-      overlay.textContent = 'Session ended';
-      cleanupSession();
+      cleanup();
     }
 
-    // ===================== Frame Rendering =====================
+    function cleanup() {
+      streaming = false;
+      startBtn.disabled = false;
+      platformSel.disabled = false;
+      stopBtn.disabled = true;
+      scrollBar.style.display = "none";
+      canvasListenersAttached = false;
+      audioStateEl.textContent = "audio: off";
+      audioIndicator.classList.remove("active");
 
-    function renderFrame(arrayBuffer) {
-      const blob = new Blob([arrayBuffer], { type: 'image/jpeg' });
-      createImageBitmap(blob).then(bitmap => {
-        // Draw to full server resolution (quality preserved)
-        ctx.drawImage(bitmap, 0, 0, SERVER_WIDTH, SERVER_HEIGHT);
-        bitmap.close();
-      }).catch(err => {
-        console.warn("Frame decode error:", err);
-      });
-
-      // FPS counter
-      frameCount++;
-      const now = performance.now();
-      if (now - lastFpsTime >= 1000) {
-        fpsDisplay.textContent = frameCount + ' fps';
-        frameCount = 0;
-        lastFpsTime = now;
+      if (peerConnection) {
+        try { peerConnection.close(); } catch (_) { }
+        peerConnection = null;
       }
+      if (videoEl.srcObject) {
+        videoEl.srcObject.getTracks().forEach(t => t.stop());
+        videoEl.srcObject = null;
+      }
+      videoEl.muted = true;
+      overlay.classList.remove("hidden");
+      overlay.textContent = "Select a platform and click Start";
     }
 
-    function handleControlMessage(msg) {
+    function handleControl(msg) {
       switch (msg.type) {
-        case 'stream-started':
-          console.log("Stream started at", msg.width + "x" + msg.height);
-          setStatus('connected');
+        case "stream-started":
+          setStatus("connected");
           streaming = true;
-          overlay.classList.add('hidden');
           stopBtn.disabled = false;
+          scrollBar.style.display = "flex";
+          if (msg.width) logicalW = msg.width;
+          if (msg.height) logicalH = msg.height;
+          lastMouseX = Math.round(logicalW / 2);
+          lastMouseY = Math.round(logicalH / 2);
+          attachInputListeners();
+          dbg("[Stream] Started — waiting for first frame…");
           break;
-        case 'stream-stopped':
-          console.log("Stream stopped");
+
+        case "stream-stopped":
           streaming = false;
+          overlay.classList.remove("hidden");
+          overlay.textContent = "Stream stopped";
           break;
-        case 'error':
-          console.error("Server error:", msg.message);
-          alert("Server error: " + msg.message);
+
+        case "session-ended":
+          overlay.classList.remove("hidden");
+          overlay.textContent = msg.message || "Session ended";
+          cleanup();
+          break;
+
+        case "error":
+          dbg("[Server] " + msg.message, true);
           break;
       }
     }
 
-    // ===================== Input Handling =====================
+    function setStatus(s) { statusDot.className = "status-dot " + s; }
 
+    // ─── Input sending ────────────────────────────────────────────────────────
     function sendInput(data) {
-      if (ws && ws.readyState === WebSocket.OPEN && sessionId) {
+      if (ws?.readyState === WebSocket.OPEN && sessionId) {
         ws.send(JSON.stringify({ sessionId, ...data }));
       }
     }
 
-    // --- Click ---
-    canvas.addEventListener("click", function (e) {
+    // ─── Attach input listeners to video element ──────────────────────────────
+    function attachInputListeners() {
+      if (canvasListenersAttached) return;
+      canvasListenersAttached = true;
+
+      // ── Click ────────────────────────────────────────────────────────────────
+      videoEl.addEventListener("click", e => {
+        if (!streaming) return;
+        e.preventDefault();
+        const x = clampX(scaleX(e.clientX));
+        const y = clampY(scaleY(e.clientY));
+        sendInput({ type: "click", x, y });
+        dbg(`click (${x}, ${y})`);
+        // Auto-arm typing mode — if tap landed on an input the server will
+        // have focused it. The server's hasFocus check drops stray type events.
+        armTypingMode();
+      });
+
+      // ── Mouse wheel ──────────────────────────────────────────────────────────
+      videoEl.addEventListener("wheel", e => {
+        e.preventDefault();
+        if (!streaming) return;
+
+        let dx = e.deltaX, dy = e.deltaY;
+        if (e.deltaMode === 1) { dx *= 40; dy *= 40; }
+        else if (e.deltaMode === 2) { dx *= 800; dy *= 800; }
+
+        // Cap at sane values
+        dx = Math.max(-600, Math.min(600, dx));
+        dy = Math.max(-600, Math.min(600, dy));
+
+        sendInput({
+          type: "scroll",
+          x: clampX(scaleX(e.clientX)),
+          y: clampY(scaleY(e.clientY)),
+          deltaX: Math.round(dx),
+          deltaY: Math.round(dy),
+        });
+      }, { passive: false });
+
+      // ── Touch ────────────────────────────────────────────────────────────────
+      let touchStartX = 0, touchStartY = 0;
+      let touchLastY = 0, touchStartTime = 0;
+      let touchVelocity = 0;       // px/ms for momentum
+      let lastTouchTime = 0;
+      let momentumFrame = null;
+
+      videoEl.addEventListener("touchstart", e => {
+        e.preventDefault();
+        if (momentumFrame) { cancelAnimationFrame(momentumFrame); momentumFrame = null; }
+        const t = e.touches[0];
+        touchStartX = touchLastY = t.clientX; // note: X stored in touchStartX
+        touchStartX = t.clientX;
+        touchStartY = t.clientY;
+        touchLastY = t.clientY;
+        touchStartTime = lastTouchTime = Date.now();
+        touchVelocity = 0;
+      }, { passive: false });
+
+      videoEl.addEventListener("touchmove", e => {
+        e.preventDefault();
+        if (!streaming) return;
+        const t = e.touches[0];
+        const now = Date.now();
+        const dt = now - lastTouchTime || 1;
+        const rawDy = (touchLastY - t.clientY);
+
+        // Velocity in px/ms (positive = scroll down)
+        touchVelocity = rawDy / dt;
+        lastTouchTime = now;
+        touchLastY = t.clientY;
+
+        // Scale to logical coords — multiply by 3x for snappy feel
+        const dy = rawDy * 3.0;
+        if (Math.abs(dy) < 1) return;
+
+        sendInput({
+          type: "scroll",
+          x: clampX(scaleX(touchStartX)),
+          y: Math.round(logicalH / 2),
+          deltaX: 0,
+          deltaY: Math.round(dy),
+        });
+      }, { passive: false });
+
+      videoEl.addEventListener("touchend", e => {
+        e.preventDefault();
+        if (!streaming) return;
+        const t = e.changedTouches[0];
+        const dt = Date.now() - touchStartTime;
+        const dx = Math.abs(t.clientX - touchStartX);
+        const dy = Math.abs(t.clientY - touchStartY);
+
+        // Short tap = click
+        if (dt < 280 && dx < 15 && dy < 15) {
+          const x = clampX(scaleX(touchStartX));
+          const y = clampY(scaleY(touchStartY));
+          sendInput({ type: "click", x, y });
+          dbg(`tap (${x}, ${y})`);
+          armTypingMode();
+          return;
+        }
+
+        // Momentum scrolling — decay velocity over ~400ms
+        let velocity = touchVelocity * 3.0; // scaled
+        const decay = 0.92;
+        const scaleCenter = clampX(scaleX(touchStartX));
+
+        function momentumScroll() {
+          if (Math.abs(velocity) < 0.5 || !streaming) {
+            momentumFrame = null;
+            return;
+          }
+          sendInput({
+            type: "scroll",
+            x: scaleCenter,
+            y: Math.round(logicalH / 2),
+            deltaX: 0,
+            deltaY: Math.round(velocity * 16), // ~16ms per frame
+          });
+          velocity *= decay;
+          momentumFrame = requestAnimationFrame(momentumScroll);
+        }
+
+        if (Math.abs(touchVelocity) > 0.3) {
+          momentumFrame = requestAnimationFrame(momentumScroll);
+        }
+      }, { passive: false });
+
+      // ── Mouse move (track for keyboard scroll target) ─────────────────────
+      videoEl.addEventListener("mousemove", e => {
+        lastMouseX = clampX(scaleX(e.clientX));
+        lastMouseY = clampY(scaleY(e.clientY));
+      }, { passive: true });
+
+      dbg("[Input] Listeners ready");
+    }
+
+    // ─── Scroll buttons ───────────────────────────────────────────────────────
+    function makeScrollBtn(id, dy) {
+      const btn = document.getElementById(id);
+      let iv = null;
+      const fire = () => {
+        if (streaming) sendInput({
+          type: "scroll",
+          x: Math.round(logicalW / 2),
+          y: Math.round(logicalH / 2),
+          deltaX: 0,
+          deltaY: dy,
+        });
+      };
+      const start = e => { e.preventDefault(); fire(); iv = setInterval(fire, 80); };
+      const stop = () => clearInterval(iv);
+      btn.addEventListener("mousedown", start);
+      btn.addEventListener("touchstart", start, { passive: false });
+      btn.addEventListener("mouseup", stop);
+      btn.addEventListener("mouseleave", stop);
+      btn.addEventListener("touchend", stop);
+    }
+
+    makeScrollBtn("scrollTopBtn", -3000);
+    makeScrollBtn("scrollUpBtn", -300);
+    makeScrollBtn("scrollDownBtn", 300);
+    makeScrollBtn("scrollBotBtn", 3000);
+
+    // ─── Typing mode ─────────────────────────────────────────────────────────
+    // When the user taps an input on the remote screen, we enter "typing mode".
+    // In this mode the local keyboard input bar is auto-focused and every
+    // keystroke is forwarded live (character by character) to the remote page.
+    // This is the most reliable way to type into Instagram / React inputs.
+
+    let typingMode = false;
+
+    // Called when a click lands on the remote screen — auto-enter typing mode
+    // if the remote element under the tap is an input/textarea.
+    // We can't know that for sure client-side, so we always arm typing mode
+    // after any tap and let the server's hasFocus check be the safety net.
+    function armTypingMode() {
+      if (!streaming) return;
+      typingMode = true;
+      const tb = document.getElementById("textInput");
+      tb.placeholder = "Typing into remote screen… (Esc to stop)";
+      tb.focus();
+      dbg("⌨ Typing mode ON — keys go to remote screen");
+    }
+
+    function disarmTypingMode() {
+      typingMode = false;
+      const tb = document.getElementById("textInput");
+      tb.placeholder = "Type text to send…";
+      tb.blur();
+      dbg("[Input] Typing mode OFF");
+    }
+
+    // Wire up the text input box:
+    // - While in typing mode, each keystroke is forwarded immediately.
+    // - Enter sends accumulated text and keeps typing mode.
+    // - Escape exits typing mode.
+    const textInputEl = document.getElementById("textInput");
+
+    textInputEl.addEventListener("keydown", e => {
       if (!streaming) return;
 
-      // Get click position relative to canvas
-      const rect = canvas.getBoundingClientRect();
+      if (e.key === "Escape") {
+        e.preventDefault();
+        disarmTypingMode();
+        return;
+      }
 
-      // Scale from display coordinates to server coordinates
-      const scaleX = SERVER_WIDTH / rect.width;
-      const scaleY = SERVER_HEIGHT / rect.height;
+      if (!typingMode) return; // normal local input behaviour when not in typing mode
 
-      const x = (e.clientX - rect.left) * scaleX;
-      const y = (e.clientY - rect.top) * scaleY;
+      e.stopPropagation(); // don't let the global keydown handler fire too
 
-      sendInput({ type: "click", x: Math.round(x), y: Math.round(y) });
+      if (e.key === "Enter") {
+        e.preventDefault();
+        // Send Enter to remote page
+        sendInput({ type: "keypress", key: "Enter" });
+        textInputEl.value = "";
+        return;
+      }
+
+      if (e.key === "Backspace") {
+        e.preventDefault();
+        sendInput({ type: "keypress", key: "Backspace" });
+        // Mirror backspace locally
+        textInputEl.value = textInputEl.value.slice(0, -1);
+        return;
+      }
+
+      // For printable chars, let the browser add them to the input value,
+      // then forward in the oninput handler below (avoids duplicate sends).
     });
 
-    // --- Scroll ---
-    canvas.addEventListener("wheel", function (e) {
+    textInputEl.addEventListener("input", e => {
+      if (!typingMode || !streaming) return;
+      // The input value just changed — forward whatever was typed/pasted.
+      const val = textInputEl.value;
+      if (!val) return;
+      sendInput({ type: "type", text: val });
+      textInputEl.value = ""; // clear after forwarding
+    });
+
+    // ─── Global keyboard (when text input is NOT focused) ────────────────────
+    document.addEventListener("keydown", e => {
+      if (document.activeElement === textInputEl) return; // handled above
+      if (!streaming) return;
+
+      const scrollKeys = {
+        ArrowDown: 120, ArrowUp: -120,
+        PageDown: 600, PageUp: -600,
+      };
+      if (scrollKeys[e.key] !== undefined) {
+        e.preventDefault();
+        sendInput({
+          type: "scroll",
+          x: lastMouseX, y: lastMouseY,
+          deltaX: 0, deltaY: scrollKeys[e.key],
+        });
+        return;
+      }
+
+      if (e.key === "Escape") { disarmTypingMode(); return; }
+
       e.preventDefault();
-      if (!streaming) return;
-      sendInput({ type: "scroll", deltaX: e.deltaX, deltaY: e.deltaY });
-    }, { passive: false });
-
-    // --- Keyboard ---
-    document.addEventListener('keydown', function (e) {
-      if (document.activeElement === document.getElementById('textInput') || !streaming) return;
-
-      const key = e.key;
-      if (key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
-        sendInput({ type: "keypress", key: key });
+      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+        sendInput({ type: "keypress", key: e.key });
       } else {
-        sendInput({ type: "keydown", key: key });
+        sendInput({ type: "keydown", key: e.key });
       }
     });
 
-    document.addEventListener('keyup', function (e) {
-      if (document.activeElement === document.getElementById('textInput') || !streaming) return;
-
-      if (e.key.length > 1) {
-        sendInput({ type: "keyup", key: e.key });
-      }
+    document.addEventListener("keyup", e => {
+      if (document.activeElement === textInputEl) return;
+      if (!streaming) return;
+      if (e.key.length > 1) sendInput({ type: "keyup", key: e.key });
     });
 
+    // ─── Text input Send button ───────────────────────────────────────────────
     function sendText() {
-      const input = document.getElementById('textInput');
-      const text = input.value;
-      if (!text) return;
-
-      sendInput({ type: "type", text: text });
-      input.value = '';
+      const val = textInputEl.value.trim();
+      if (!val) return;
+      sendInput({ type: "type", text: val });
+      textInputEl.value = "";
     }
-
-    // ===================== Status =====================
-
-    function setStatus(state) {
-      statusDot.className = 'status-dot ' + state;
-    }
-
-  </script>
-
-  ws.onerror = (err) => {
-  console.error("WebSocket error:", err);
-  setStatus('disconnected');
-  cleanupSession();
-  };
-
-  } catch (err) {
-  console.error("Failed to start session:", err);
-  setStatus('disconnected');
-  cleanupSession();
-  alert("Failed to start session: " + err.message);
-  }
-  }
-
-  function cleanupSession() {
-  streaming = false;
-  startBtn.disabled = false;
-  platformSelect.disabled = false;
-  stopBtn.disabled = true;
-  }
-
-  function stopSession() {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-  ws.send(JSON.stringify({
-  sessionId: sessionId,
-  type: "stop-stream"
-  }));
-  ws.close();
-  }
-  overlay.classList.remove('hidden');
-  overlay.textContent = 'Session ended';
-  cleanupSession();
-  }
-
-  // ===================== Frame Rendering =====================
-
-  function renderFrame(arrayBuffer) {
-  const blob = new Blob([arrayBuffer], { type: 'image/jpeg' });
-  createImageBitmap(blob).then(bitmap => {
-  // Draw to full canvas resolution
-  ctx.drawImage(bitmap, 0, 0, REAL_WIDTH, REAL_HEIGHT);
-  bitmap.close();
-  }).catch(err => {
-  console.warn("Frame decode error:", err);
-  });
-
-  // FPS counter
-  frameCount++;
-  const now = performance.now();
-  if (now - lastFpsTime >= 1000) {
-  fpsDisplay.textContent = frameCount + ' fps';
-  frameCount = 0;
-  lastFpsTime = now;
-  }
-  }
-
-  function handleControlMessage(msg) {
-  switch (msg.type) {
-  case 'stream-started':
-  console.log("Stream started:", msg);
-  setStatus('connected');
-  streaming = true;
-  overlay.classList.add('hidden');
-  stopBtn.disabled = false;
-  break;
-  case 'stream-stopped':
-  console.log("Stream stopped");
-  streaming = false;
-  break;
-  case 'error':
-  console.error("Server error:", msg.message);
-  alert("Server error: " + msg.message);
-  break;
-  }
-  }
-
-  // ===================== Input Handling =====================
-
-  function sendInput(data) {
-  if (ws && ws.readyState === WebSocket.OPEN && sessionId) {
-  ws.send(JSON.stringify({ sessionId, ...data }));
-  }
-  }
-
-  // --- Click ---
-  canvas.addEventListener("click", function (e) {
-  if (!streaming) return;
-
-  // Get click position relative to the canvas element
-  const rect = canvas.getBoundingClientRect();
-
-  // Scale factor: internal resolution / display size
-  const scaleX = REAL_WIDTH / rect.width;
-  const scaleY = REAL_HEIGHT / rect.height;
-
-  const x = (e.clientX - rect.left) * scaleX;
-  const y = (e.clientY - rect.top) * scaleY;
-
-  sendInput({ type: "click", x: Math.round(x), y: Math.round(y) });
-  });
-
-  // --- Scroll ---
-  canvas.addEventListener("wheel", function (e) {
-  e.preventDefault();
-  if (!streaming) return;
-  sendInput({ type: "scroll", deltaX: e.deltaX, deltaY: e.deltaY });
-  }, { passive: false });
-
-  // --- Keyboard ---
-  document.addEventListener('keydown', function (e) {
-  if (document.activeElement === document.getElementById('textInput') || !streaming) return;
-
-  const key = e.key;
-  if (key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
-  sendInput({ type: "keypress", key: key });
-  } else {
-  sendInput({ type: "keydown", key: key });
-  }
-  });
-
-  document.addEventListener('keyup', function (e) {
-  if (document.activeElement === document.getElementById('textInput') || !streaming) return;
-
-  // Only send keyup for modifiers/special keys to reduce traffic
-  if (e.key.length > 1) {
-  sendInput({ type: "keyup", key: e.key });
-  }
-  });
-
-  function sendText() {
-  const input = document.getElementById('textInput');
-  const text = input.value;
-  if (!text) return;
-
-  sendInput({ type: "type", text: text });
-  input.value = '';
-  }
-
-  // ===================== Status =====================
-
-  function setStatus(state) {
-  statusDot.className = 'status-dot ' + state;
-  }
-
   </script>
 </body>
 

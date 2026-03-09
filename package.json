@@ -10,10 +10,13 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@roamhq/wrtc": "^0.9.1",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
+    "jpeg-js": "^0.4.4",
     "playwright": "^1.58.2",
+    "sharp": "^0.34.5",
     "uuid": "^8.3.2",
     "ws": "^8.19.0"
   }
