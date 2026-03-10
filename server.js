@@ -116,8 +116,10 @@ app.post("/start-session", async (req, res) => {
     createSession(sessionId, context, page, { width: viewWidth, height: viewHeight });
 
     // Inject audio capture — pass sessionId so server can route binary frames
-    // The WS URL points back to this server. The audio WS path is handled in wss.on('connection')
-    const serverWsUrl = `ws://localhost:3000`;
+    // The WS URL points back to this server.
+    const host = req.headers.host || "localhost:3000";
+    const protocol = req.protocol === "https" ? "wss" : "ws";
+    const serverWsUrl = `${protocol}://${host}`;
     await page
       .evaluate(
         ({ wsUrl, sId }) => {
