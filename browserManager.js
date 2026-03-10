@@ -92,7 +92,7 @@ async function initBrowser() {
     // headless: false — renders via SwiftShader software GPU.
     // This gives you a fully working Web Audio API, proper GPU compositing
     // for CDP screencast, and working WebGL — all without a real display.
-    headless: false,
+    headless: true,
 
     args: CHROMIUM_ARGS,
 
