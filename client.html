@@ -14,10 +14,21 @@
       box-sizing: border-box;
     }
 
+    :root {
+      --primary: #58a6ff;
+      --primary-hover: #79c0ff;
+      --bg: #0d1117;
+      --panel-bg: rgba(22, 27, 34, 0.8);
+      --border: rgba(48, 54, 61, 0.7);
+      --glass: rgba(255, 255, 255, 0.03);
+      --text: #c9d1d9;
+    }
+
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #0f1117;
-      color: #e1e4e8;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      background-image: radial-gradient(circle at 50% 0%, #161b22 0%, #0d1117 100%);
+      color: var(--text);
       min-height: 100vh;
       display: flex;
       flex-direction: column;
@@ -27,211 +38,156 @@
 
     .header {
       width: 100%;
-      padding: 10px 16px;
-      background: #161820;
-      border-bottom: 1px solid #2d2f3a;
+      padding: 16px 24px;
+      backdrop-filter: blur(12px);
+      background: var(--panel-bg);
+      border-bottom: 1px solid var(--border);
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 10px;
       position: sticky;
       top: 0;
       z-index: 20;
-      flex-wrap: wrap;
+      box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
     }
 
     .header h1 {
-      font-size: 15px;
-      font-weight: 600;
-      color: #58a6ff;
-      white-space: nowrap;
+      font-size: 18px;
+      font-weight: 700;
+      background: linear-gradient(120deg, #58a6ff, #bc8cff);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: -0.5px;
     }
 
     .controls {
       display: flex;
       align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
+      gap: 12px;
     }
 
     select {
-      padding: 6px 10px;
-      background: #21262d;
-      border: 1px solid #30363d;
-      color: #c9d1d9;
-      border-radius: 6px;
-      font-size: 13px;
+      padding: 8px 14px;
+      background: rgba(33, 38, 45, 0.6);
+      border: 1px solid var(--border);
+      color: #fff;
+      border-radius: 10px;
+      font-size: 14px;
       outline: none;
-    }
-
-    select:focus {
-      border-color: #58a6ff;
-    }
-
-    button {
-      padding: 6px 14px;
-      border: 1px solid #30363d;
-      border-radius: 6px;
-      background: #21262d;
-      color: #c9d1d9;
-      font-size: 13px;
+      transition: all 0.2s;
       cursor: pointer;
-      transition: all .15s;
-      white-space: nowrap;
     }
 
-    button:hover {
-      background: #30363d;
+    select:hover {
       border-color: #8b949e;
     }
 
-    button.primary {
-      background: #238636;
-      border-color: #2ea043;
+    button {
+      padding: 8px 20px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: rgba(33, 38, 45, 0.6);
       color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    button:hover {
+      background: rgba(48, 54, 61, 0.9);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    }
+
+    button.primary {
+      background: linear-gradient(135deg, #238636, #2ea043);
+      border: none;
+      box-shadow: 0 4px 14px rgba(35, 134, 54, 0.3);
     }
 
     button.primary:hover {
-      background: #2ea043;
+      background: linear-gradient(135deg, #2ea043, #3fb950);
+      box-shadow: 0 6px 20px rgba(35, 134, 54, 0.4);
     }
 
-    button:disabled {
-      opacity: .45;
-      cursor: not-allowed;
-    }
-
-    .status-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: #f85149;
-      flex-shrink: 0;
-      transition: background .3s;
-    }
-
-    .status-dot.connected {
-      background: #3fb950;
-    }
-
-    .status-dot.connecting {
-      background: #d29922;
-      animation: pulse 1s infinite;
-    }
-
-    @keyframes pulse {
-
-      0%,
-      100% {
-        opacity: 1
-      }
-
-      50% {
-        opacity: .4
-      }
-    }
-
-    /* IMPORTANT: The frame is sized exactly to match the server viewport */
     .mobile-frame {
-      margin: 16px auto 0;
-      border: 10px solid #2d2f3a;
-      border-radius: 32px;
+      margin: 32px auto 0;
+      border: 12px solid #2d2f3a;
+      border-radius: 48px;
       background: #000;
       overflow: hidden;
       position: relative;
-      box-shadow: 0 0 40px rgba(0, 0, 0, .6);
-      flex-shrink: 0;
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.8),
+        0 0 0 1px rgba(255, 255, 255, 0.05);
+      transition: transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     }
 
-    /* Video fills frame exactly — NO object-fit:contain (causes coordinate offset bugs) */
-    video {
-      display: block;
-      width: 100%;
-      height: 100%;
-      touch-action: none;
-      cursor: default;
-      -webkit-user-select: none;
-      user-select: none;
-      /* object-fit: fill ensures video fills frame with no letterboxing */
-      object-fit: fill;
-      background: #000;
+    .mobile-frame:hover {
+      transform: scale(1.02);
     }
 
     .overlay {
       position: absolute;
       inset: 0;
-      background: rgba(0, 0, 0, .85);
+      background: rgba(13, 17, 23, 0.85);
+      backdrop-filter: blur(8px);
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       color: #8b949e;
-      font-size: 15px;
-      text-align: center;
-      padding: 20px;
       z-index: 5;
+      transition: opacity 0.3s;
     }
 
-    .overlay.hidden {
-      display: none;
+    .hidden {
+      display: none !important;
+    }
+
+    #screen {
+      width: 100%;
+      height: 100%;
+      object-fit: fill;
+      background: #000;
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #f85149;
+      box-shadow: 0 0 8px rgba(248, 81, 73, 0.5);
+    }
+
+    .status-dot.connected {
+      background: #3fb950;
+      box-shadow: 0 0 12px rgba(63, 185, 80, 0.5);
     }
 
     .info-bar {
+      margin-top: 24px;
+      padding: 12px 24px;
+      background: var(--glass);
+      border: 1px solid var(--border);
+      border-radius: 20px;
       display: flex;
-      gap: 16px;
-      flex-wrap: wrap;
-      justify-content: center;
-      padding: 6px 16px;
-      font-size: 11px;
-      color: #484f58;
-      width: 100%;
-      max-width: 480px;
-    }
-
-    .scroll-bar {
-      display: flex;
-      gap: 8px;
-      padding: 6px 16px 4px;
-      width: 100%;
-      max-width: 480px;
-      justify-content: center;
-    }
-
-    .scroll-bar button {
+      gap: 20px;
+      font-family: 'JetBrains Mono', monospace;
       font-size: 12px;
-      padding: 5px 12px;
-    }
-
-    .input-bar {
-      display: flex;
-      gap: 8px;
-      padding: 6px 16px 16px;
-      width: 100%;
-      max-width: 480px;
-    }
-
-    .input-bar input {
-      flex: 1;
-      padding: 9px 12px;
-      background: #161820;
-      border: 1px solid #30363d;
-      border-radius: 6px;
-      color: #c9d1d9;
-      font-size: 14px;
-      outline: none;
-    }
-
-    .input-bar input:focus {
-      border-color: #58a6ff;
     }
 
     #debugPanel {
+      margin: 16px 0;
+      padding: 12px;
       width: 100%;
-      max-width: 480px;
-      padding: 4px 16px 8px;
-      font-size: 11px;
-      color: #6e7681;
+      max-width: 390px;
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 8px;
       font-family: monospace;
-      line-height: 1.6;
+      font-size: 11px;
+      opacity: 0.7;
     }
 
     #debugPanel.err {
@@ -246,7 +202,6 @@
       background: #484f58;
       flex-shrink: 0;
       transition: background .3s;
-      title: "Audio";
     }
 
     #audioIndicator.active {
@@ -309,9 +264,13 @@
 
   <script>
     // ─── Config ──────────────────────────────────────────────────────────────
-    const SERVER_URL = window.location.origin.includes("localhost") || window.location.origin.includes("127.0.0.1")
-      ? window.location.origin
-      : window.location.origin; // Always use current origin for signaling
+
+    // const SERVER_URL = window.location.origin.includes("localhost") || window.location.origin.includes("127.0.0.1")
+    //   ? window.location.origin
+    //   : window.location.origin; // Always use current origin for signaling
+
+    const SERVER_URL = 'http://localhost:3000'; //'http://185.181.8.32:3000';
+
 
     // These MUST match the server viewport exactly
     const SERVER_W = 390;
@@ -338,8 +297,10 @@
     const debugPanel = document.getElementById("debugPanel");
 
     // ─── Sizing — set once, don't change dynamically ─────────────────────────
-    mobileFrame.style.width = DISPLAY_W + "px";
-    mobileFrame.style.height = DISPLAY_H + "px";
+    if (mobileFrame) {
+      mobileFrame.style.width = DISPLAY_W + "px";
+      mobileFrame.style.height = DISPLAY_H + "px";
+    }
 
     // ─── State ────────────────────────────────────────────────────────────────
     let sessionId = null, ws = null, streaming = false;
@@ -593,7 +554,7 @@
       startBtn.disabled = false;
       platformSel.disabled = false;
       stopBtn.disabled = true;
-      scrollBar.style.display = "none";
+      if (scrollBar) scrollBar.style.display = "none";
       canvasListenersAttached = false;
       audioStateEl.textContent = "audio: off";
       audioIndicator.classList.remove("active");
@@ -617,7 +578,7 @@
           setStatus("connected");
           streaming = true;
           stopBtn.disabled = false;
-          scrollBar.style.display = "flex";
+          if (scrollBar) scrollBar.style.display = "flex";
           if (msg.width) logicalW = msg.width;
           if (msg.height) logicalH = msg.height;
           lastMouseX = Math.round(logicalW / 2);
@@ -794,6 +755,7 @@
     // ─── Scroll buttons ───────────────────────────────────────────────────────
     function makeScrollBtn(id, dy) {
       const btn = document.getElementById(id);
+      if (!btn) return;
       let iv = null;
       const fire = () => {
         if (streaming) sendInput({
@@ -834,16 +796,20 @@
       if (!streaming) return;
       typingMode = true;
       const tb = document.getElementById("textInput");
-      tb.placeholder = "Typing into remote screen… (Esc to stop)";
-      tb.focus();
+      if (tb) {
+        tb.placeholder = "Typing into remote screen… (Esc to stop)";
+        tb.focus();
+      }
       dbg("⌨ Typing mode ON — keys go to remote screen");
     }
 
     function disarmTypingMode() {
       typingMode = false;
       const tb = document.getElementById("textInput");
-      tb.placeholder = "Type text to send…";
-      tb.blur();
+      if (tb) {
+        tb.placeholder = "Type text to send…";
+        tb.blur();
+      }
       dbg("[Input] Typing mode OFF");
     }
 
@@ -852,48 +818,49 @@
     // - Enter sends accumulated text and keeps typing mode.
     // - Escape exits typing mode.
     const textInputEl = document.getElementById("textInput");
+    if (textInputEl) {
+      textInputEl.addEventListener("keydown", e => {
+        if (!streaming) return;
 
-    textInputEl.addEventListener("keydown", e => {
-      if (!streaming) return;
+        if (e.key === "Escape") {
+          e.preventDefault();
+          disarmTypingMode();
+          return;
+        }
 
-      if (e.key === "Escape") {
-        e.preventDefault();
-        disarmTypingMode();
-        return;
-      }
+        if (!typingMode) return; // normal local input behaviour when not in typing mode
 
-      if (!typingMode) return; // normal local input behaviour when not in typing mode
+        e.stopPropagation(); // don't let the global keydown handler fire too
 
-      e.stopPropagation(); // don't let the global keydown handler fire too
+        if (e.key === "Enter") {
+          e.preventDefault();
+          // Send Enter to remote page
+          sendInput({ type: "keypress", key: "Enter" });
+          textInputEl.value = "";
+          return;
+        }
 
-      if (e.key === "Enter") {
-        e.preventDefault();
-        // Send Enter to remote page
-        sendInput({ type: "keypress", key: "Enter" });
-        textInputEl.value = "";
-        return;
-      }
+        if (e.key === "Backspace") {
+          e.preventDefault();
+          sendInput({ type: "keypress", key: "Backspace" });
+          // Mirror backspace locally
+          textInputEl.value = textInputEl.value.slice(0, -1);
+          return;
+        }
 
-      if (e.key === "Backspace") {
-        e.preventDefault();
-        sendInput({ type: "keypress", key: "Backspace" });
-        // Mirror backspace locally
-        textInputEl.value = textInputEl.value.slice(0, -1);
-        return;
-      }
+        // For printable chars, let the browser add them to the input value,
+        // then forward in the oninput handler below (avoids duplicate sends).
+      });
 
-      // For printable chars, let the browser add them to the input value,
-      // then forward in the oninput handler below (avoids duplicate sends).
-    });
-
-    textInputEl.addEventListener("input", e => {
-      if (!typingMode || !streaming) return;
-      // The input value just changed — forward whatever was typed/pasted.
-      const val = textInputEl.value;
-      if (!val) return;
-      sendInput({ type: "type", text: val });
-      textInputEl.value = ""; // clear after forwarding
-    });
+      textInputEl.addEventListener("input", e => {
+        if (!typingMode || !streaming) return;
+        // The input value just changed — forward whatever was typed/pasted.
+        const val = textInputEl.value;
+        if (!val) return;
+        sendInput({ type: "type", text: val });
+        textInputEl.value = ""; // clear after forwarding
+      });
+    }
 
     // ─── Global keyboard (when text input is NOT focused) ────────────────────
     document.addEventListener("keydown", e => {
@@ -932,6 +899,7 @@
 
     // ─── Text input Send button ───────────────────────────────────────────────
     function sendText() {
+      if (!textInputEl) return;
       const val = textInputEl.value.trim();
       if (!val) return;
       sendInput({ type: "type", text: val });
