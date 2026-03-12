@@ -1,0 +1,80 @@
+# docker-compose.yml
+# ─────────────────────────────────────────────────────────────────────────────
+# BullionSocial — Remote Mobile Browser Service
+#
+# HOW TO USE ON WINDOWS SERVER:
+#   1. Install Docker Desktop (or Docker Engine via WSL2 backend)
+#   2. cd into this folder
+#   3. docker compose up -d --build
+#   4. Open http://<server-ip>:3000 in your browser
+#
+# UPDATING:
+#   docker compose pull && docker compose up -d --build
+#
+# LOGS:
+#   docker compose logs -f bullion-social
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  bullion-social:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: bullion-social:latest
+    container_name: bullion-social
+
+    # ── Port mapping ──────────────────────────────────────────────────────────
+    # Map host port 3000 → container port 3000.
+    # Change the left side to use a different host port, e.g. "8080:3000"
+    ports:
+      - "3000:3000"
+
+    # ── Restart policy ────────────────────────────────────────────────────────
+    # Always restart unless the container was explicitly stopped.
+    restart: unless-stopped
+
+    # ── Resource limits ───────────────────────────────────────────────────────
+    # Chromium + Node.js can be memory-hungry. Tune for your server.
+    # Minimum recommended: 2 GB RAM, 2 CPUs for a single concurrent session.
+    deploy:
+      resources:
+        limits:
+          memory: 3g
+          cpus: '2'
+        reservations:
+          memory: 512m
+
+    # ── Environment ───────────────────────────────────────────────────────────
+    environment:
+      - NODE_ENV=production
+      - DISPLAY=:99
+
+    # ── Shared memory ─────────────────────────────────────────────────────────
+    # Chromium writes rendering data to /dev/shm. The default Docker size (64 MB)
+    # is too small — increase to 512 MB to prevent blank/failed renders.
+    shm_size: '512mb'
+
+    # ── Volumes ───────────────────────────────────────────────────────────────
+    # Cache the Chromium user-data directory for faster page loads on repeat visits.
+    volumes:
+      - chromium-userdata:/tmp/chromium-userdata
+
+    # ── Health check (mirrors Dockerfile HEALTHCHECK) ─────────────────────────
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+    # ── Logging ───────────────────────────────────────────────────────────────
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+# ── Named volumes ─────────────────────────────────────────────────────────────
+volumes:
+  chromium-userdata:
+    driver: local

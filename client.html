@@ -5,6 +5,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Remote Mobile Browser</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet">
   <style>
     *,
     *::before,
@@ -18,16 +22,23 @@
       --primary: #58a6ff;
       --primary-hover: #79c0ff;
       --bg: #0d1117;
-      --panel-bg: rgba(22, 27, 34, 0.8);
-      --border: rgba(48, 54, 61, 0.7);
+      --panel-bg: rgba(22, 27, 34, 0.92);
+      --border: rgba(48, 54, 61, 0.8);
       --glass: rgba(255, 255, 255, 0.03);
       --text: #c9d1d9;
+      --text-muted: #8b949e;
+      --green: #3fb950;
+      --red: #f85149;
+      --radius: 10px;
     }
 
     body {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: var(--bg);
-      background-image: radial-gradient(circle at 50% 0%, #161b22 0%, #0d1117 100%);
+      background-image:
+        radial-gradient(ellipse at 20% 0%, rgba(88, 166, 255, 0.06) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 100%, rgba(188, 140, 255, 0.06) 0%, transparent 50%),
+        radial-gradient(circle at 50% 0%, #161b22 0%, #0d1117 100%);
       color: var(--text);
       min-height: 100vh;
       display: flex;
@@ -36,10 +47,12 @@
       overflow-x: hidden;
     }
 
+    /* ── Header ─────────────────────────────────────────────────────────── */
     .header {
       width: 100%;
-      padding: 16px 24px;
-      backdrop-filter: blur(12px);
+      padding: 14px 24px;
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
       background: var(--panel-bg);
       border-bottom: 1px solid var(--border);
       display: flex;
@@ -48,11 +61,11 @@
       position: sticky;
       top: 0;
       z-index: 20;
-      box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+      box-shadow: 0 4px 30px rgba(0, 0, 0, 0.4);
     }
 
     .header h1 {
-      font-size: 18px;
+      font-size: 17px;
       font-weight: 700;
       background: linear-gradient(120deg, #58a6ff, #bc8cff);
       -webkit-background-clip: text;
@@ -64,16 +77,17 @@
     .controls {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 10px;
     }
 
     select {
-      padding: 8px 14px;
-      background: rgba(33, 38, 45, 0.6);
+      padding: 7px 12px;
+      background: rgba(33, 38, 45, 0.8);
       border: 1px solid var(--border);
       color: #fff;
-      border-radius: 10px;
-      font-size: 14px;
+      border-radius: var(--radius);
+      font-size: 13px;
+      font-family: inherit;
       outline: none;
       transition: all 0.2s;
       cursor: pointer;
@@ -83,118 +97,275 @@
       border-color: #8b949e;
     }
 
-    button {
-      padding: 8px 20px;
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      background: rgba(33, 38, 45, 0.6);
-      color: #fff;
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    select:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.15);
     }
 
-    button:hover {
-      background: rgba(48, 54, 61, 0.9);
+    button {
+      padding: 7px 16px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: rgba(33, 38, 45, 0.8);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      white-space: nowrap;
+    }
+
+    button:hover:not(:disabled) {
+      background: rgba(48, 54, 61, 0.95);
       transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+
+    button:active:not(:disabled) {
+      transform: translateY(0);
+    }
+
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
     }
 
     button.primary {
       background: linear-gradient(135deg, #238636, #2ea043);
       border: none;
-      box-shadow: 0 4px 14px rgba(35, 134, 54, 0.3);
+      box-shadow: 0 3px 12px rgba(35, 134, 54, 0.35);
     }
 
-    button.primary:hover {
+    button.primary:hover:not(:disabled) {
       background: linear-gradient(135deg, #2ea043, #3fb950);
-      box-shadow: 0 6px 20px rgba(35, 134, 54, 0.4);
+      box-shadow: 0 5px 18px rgba(35, 134, 54, 0.45);
     }
 
+    /* ── Mobile frame ────────────────────────────────────────────────────── */
     .mobile-frame {
-      margin: 32px auto 0;
-      border: 12px solid #2d2f3a;
-      border-radius: 48px;
+      margin: 28px auto 0;
+      border: 10px solid #21262d;
+      border-radius: 44px;
       background: #000;
       overflow: hidden;
       position: relative;
-      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.8),
-        0 0 0 1px rgba(255, 255, 255, 0.05);
-      transition: transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    }
-
-    .mobile-frame:hover {
-      transform: scale(1.02);
+      box-shadow:
+        0 0 0 1px rgba(255, 255, 255, 0.06),
+        0 8px 32px rgba(0, 0, 0, 0.6),
+        0 24px 80px rgba(0, 0, 0, 0.7);
+      /* No hover scale — it causes jitter while interacting */
     }
 
     .overlay {
       position: absolute;
       inset: 0;
-      background: rgba(13, 17, 23, 0.85);
-      backdrop-filter: blur(8px);
+      background: rgba(13, 17, 23, 0.88);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      color: #8b949e;
+      color: var(--text-muted);
       z-index: 5;
-      transition: opacity 0.3s;
+      transition: opacity 0.3s, visibility 0.3s;
+      font-size: 14px;
+      text-align: center;
+      padding: 24px;
+      gap: 12px;
+    }
+
+    .overlay-icon {
+      font-size: 40px;
+      opacity: 0.5;
     }
 
     .hidden {
-      display: none !important;
+      opacity: 0 !important;
+      visibility: hidden !important;
+      pointer-events: none !important;
     }
 
+    /* ────────────────────────────────────────────────────────────────────────
+       VIDEO — crisp rendering is critical here.
+       object-fit: contain  → no stretching, preserves aspect ratio
+       image-rendering      → no extra browser softening
+    ──────────────────────────────────────────────────────────────────────── */
     #screen {
       width: 100%;
       height: 100%;
-      object-fit: fill;
+      display: block;
+      object-fit: contain;
       background: #000;
+      /* Prevent the browser from applying sub-pixel smoothing */
+      image-rendering: -webkit-optimize-contrast;
+      /* Safari */
+      image-rendering: crisp-edges;
+      /* FF / others */
+      /* Make it focusable for raw keydown fallback */
+      outline: none;
     }
 
+    /* ── Typing mode badge ───────────────────────────────────────────────── */
+    #typingBadge {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(88, 166, 255, 0.92);
+      color: #000;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 20px;
+      z-index: 10;
+      pointer-events: none;
+      letter-spacing: 0.5px;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+
+    #typingBadge.active {
+      opacity: 1;
+    }
+
+    /* ── Status indicators ───────────────────────────────────────────────── */
     .status-dot {
-      width: 10px;
-      height: 10px;
+      width: 9px;
+      height: 9px;
       border-radius: 50%;
-      background: #f85149;
+      background: var(--red);
       box-shadow: 0 0 8px rgba(248, 81, 73, 0.5);
+      flex-shrink: 0;
+      transition: all 0.3s;
     }
 
     .status-dot.connected {
-      background: #3fb950;
-      box-shadow: 0 0 12px rgba(63, 185, 80, 0.5);
+      background: var(--green);
+      box-shadow: 0 0 12px rgba(63, 185, 80, 0.6);
+      animation: statusPulse 2s ease-in-out infinite;
     }
 
+    .status-dot.connecting {
+      background: #e3b341;
+      box-shadow: 0 0 12px rgba(227, 179, 65, 0.6);
+      animation: statusPulse 0.8s ease-in-out infinite;
+    }
+
+    @keyframes statusPulse {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.5;
+      }
+    }
+
+    /* ── Info bar ────────────────────────────────────────────────────────── */
     .info-bar {
-      margin-top: 24px;
-      padding: 12px 24px;
+      margin-top: 20px;
+      padding: 10px 20px;
       background: var(--glass);
       border: 1px solid var(--border);
       border-radius: 20px;
       display: flex;
       gap: 20px;
+      align-items: center;
       font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .info-bar span {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    /* ── Keyboard/Input toolbar ──────────────────────────────────────────── */
+    .input-toolbar {
+      margin-top: 16px;
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      max-width: 390px;
+      padding: 0 4px;
+    }
+
+    #textInput {
+      flex: 1;
+      padding: 10px 14px;
+      background: rgba(22, 27, 34, 0.9);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      color: #fff;
+      font-size: 14px;
+      font-family: inherit;
+      outline: none;
+      transition: all 0.2s;
+      caret-color: var(--primary);
+    }
+
+    #textInput:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.15);
+    }
+
+    #textInput.typing-active {
+      border-color: #bc8cff;
+      box-shadow: 0 0 0 3px rgba(188, 140, 255, 0.15);
+    }
+
+    #textInput::placeholder {
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+
+    .toolbar-btn {
+      padding: 9px 13px;
+      font-size: 16px;
+      min-width: unset;
+      border-radius: var(--radius);
+    }
+
+    /* ── Scroll buttons ──────────────────────────────────────────────────── */
+    .scroll-bar {
+      margin-top: 16px;
+      display: flex;
+      gap: 8px;
+      margin-bottom: 24px;
+    }
+
+    .scroll-bar button {
+      padding: 7px 14px;
       font-size: 12px;
     }
 
+    /* ── Debug panel ─────────────────────────────────────────────────────── */
     #debugPanel {
-      margin: 16px 0;
-      padding: 12px;
+      margin: 0 0 16px;
+      padding: 8px 14px;
       width: 100%;
       max-width: 390px;
-      background: rgba(0, 0, 0, 0.2);
+      background: rgba(0, 0, 0, 0.25);
       border-radius: 8px;
-      font-family: monospace;
-      font-size: 11px;
-      opacity: 0.7;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10.5px;
+      color: var(--text-muted);
+      min-height: 28px;
     }
 
     #debugPanel.err {
-      color: #f85149;
+      color: var(--red);
     }
 
-    /* Audio indicator */
+    /* ── Audio indicator ─────────────────────────────────────────────────── */
     #audioIndicator {
       width: 8px;
       height: 8px;
@@ -205,8 +376,39 @@
     }
 
     #audioIndicator.active {
-      background: #3fb950;
-      animation: pulse 0.5s infinite;
+      background: var(--green);
+      animation: audioPulse 0.6s ease-in-out infinite;
+    }
+
+    @keyframes audioPulse {
+
+      0%,
+      100% {
+        transform: scale(1);
+        opacity: 1;
+      }
+
+      50% {
+        transform: scale(1.4);
+        opacity: 0.7;
+      }
+    }
+
+    /* ── Reconnect notice ────────────────────────────────────────────────── */
+    #reconnectNotice {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(227, 179, 65, 0.95);
+      color: #000;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 10px 20px;
+      border-radius: 30px;
+      z-index: 100;
+      display: none;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
     }
   </style>
 </head>
@@ -228,113 +430,165 @@
         <option value="telegram">Telegram</option>
         <option value="google">Google</option>
       </select>
-      <div class="status-dot" id="statusDot" title="Connection"></div>
-      <div id="audioIndicator" title="Audio"></div>
-      <button class="primary" id="startBtn" onclick="startSession()">Start</button>
-      <button id="stopBtn" onclick="stopSession()" disabled>Stop</button>
+      <div class="status-dot" id="statusDot" title="Connection status"></div>
+      <div id="audioIndicator" title="Audio status"></div>
+      <button class="primary" id="startBtn" onclick="startSession()">▶ Start</button>
+      <button id="stopBtn" onclick="stopSession()" disabled>■ Stop</button>
     </div>
   </div>
 
+  <!-- Mobile phone frame with video stream -->
   <div class="mobile-frame" id="mobileFrame">
-    <video id="screen" autoplay playsinline muted></video>
-    <div class="overlay" id="overlay">Select a platform and click Start</div>
+    <video id="screen" autoplay playsinline muted tabindex="0"></video>
+    <div class="overlay" id="overlay">
+      <div class="overlay-icon">📱</div>
+      <div>Select a platform and click <strong>▶ Start</strong></div>
+    </div>
+    <div id="typingBadge">⌨ TYPING</div>
   </div>
 
+  <!-- Info bar -->
   <div class="info-bar">
-    <span id="resolutionEl">—</span>
-    <span id="fpsEl">— fps</span>
-    <span id="connStateEl">disconnected</span>
-    <span id="audioStateEl">audio: off</span>
+    <span>📐 <span id="resolutionEl">—</span></span>
+    <span>🎞 <span id="fpsEl">— fps</span></span>
+    <span>🔗 <span id="connStateEl">disconnected</span></span>
+    <span>🔊 <span id="audioStateEl">audio: off</span></span>
+    <span>📶 <span id="latencyEl">—</span></span>
   </div>
 
-  <!-- <div class="scroll-bar" id="scrollBar" style="display:none">
-    <button id="scrollTopBtn">▲▲ Top</button>
-    <button id="scrollUpBtn">▲ Up</button>
-    <button id="scrollDownBtn">▼ Down</button>
-    <button id="scrollBotBtn">▼▼ Bot</button>
+  <!-- ── Input toolbar (always visible, always forwarding keys) ────────── -->
+  <div class="input-toolbar">
+    <input id="textInput" type="text" placeholder="Click on screen then type here…" autocomplete="off" autocorrect="off"
+      autocapitalize="off" spellcheck="false">
+    <button class="toolbar-btn" onclick="sendText()" title="Send text (Enter)">⏎</button>
+    <button class="toolbar-btn" onclick="sendSpecialKey('Backspace')" title="Backspace">⌫</button>
+    <button class="toolbar-btn" onclick="sendSpecialKey('Escape')" title="Escape">✕</button>
   </div>
 
-  <div class="input-bar">
-    <input id="textInput" type="text" placeholder="Type text to send…"
-      onkeydown="if(event.key==='Enter'){sendText();event.preventDefault();}">
-    <button onclick="sendText()">Send</button>
-  </div> -->
+  <!-- Scroll controls -->
+  <div class="scroll-bar" id="scrollBar" style="display:none">
+    <button id="scrollTopBtn">⇈ Top</button>
+    <button id="scrollUpBtn">↑ Up</button>
+    <button id="scrollDownBtn">↓ Down</button>
+    <button id="scrollBotBtn">⇊ Bot</button>
+  </div>
 
   <div id="debugPanel">WebRTC: idle</div>
 
+  <div id="reconnectNotice"></div>
+
   <script>
     // ─── Config ──────────────────────────────────────────────────────────────
+    const SERVER_URL = "http://localhost:3000"; //'http://185.181.8.32:3000';
 
-    // const SERVER_URL = window.location.origin.includes("localhost") || window.location.origin.includes("127.0.0.1")
-    //   ? window.location.origin
-    //   : window.location.origin; // Always use current origin for signaling
-
-    const SERVER_URL = 'http://185.181.8.32:3000';  //'http://localhost:3000'; //
-
-
-    // These MUST match the server viewport exactly
+    // Server's logical viewport (must match server.js defaults)
     const SERVER_W = 390;
     const SERVER_H = 844;
 
-    // Display size — mobile phone feel
+    // Display dimensions for the mobile frame
     const DISPLAY_W = 390;
     const DISPLAY_H = 700;
 
-    // ─── DOM ─────────────────────────────────────────────────────────────────
-    const videoEl = document.getElementById("screen");
-    const overlay = document.getElementById("overlay");
-    const statusDot = document.getElementById("statusDot");
-    const audioIndicator = document.getElementById("audioIndicator");
-    const startBtn = document.getElementById("startBtn");
-    const stopBtn = document.getElementById("stopBtn");
-    const platformSel = document.getElementById("platformSelect");
-    const mobileFrame = document.getElementById("mobileFrame");
-    const scrollBar = document.getElementById("scrollBar");
-    const fpsEl = document.getElementById("fpsEl");
-    const resolutionEl = document.getElementById("resolutionEl");
-    const connStateEl = document.getElementById("connStateEl");
-    const audioStateEl = document.getElementById("audioStateEl");
-    const debugPanel = document.getElementById("debugPanel");
+    // ─── DOM refs ─────────────────────────────────────────────────────────────
+    const videoEl = document.getElementById('screen');
+    const overlay = document.getElementById('overlay');
+    const statusDot = document.getElementById('statusDot');
+    const audioIndicator = document.getElementById('audioIndicator');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const platformSel = document.getElementById('platformSelect');
+    const mobileFrame = document.getElementById('mobileFrame');
+    const scrollBar = document.getElementById('scrollBar');
+    const fpsEl = document.getElementById('fpsEl');
+    const resolutionEl = document.getElementById('resolutionEl');
+    const connStateEl = document.getElementById('connStateEl');
+    const audioStateEl = document.getElementById('audioStateEl');
+    const latencyEl = document.getElementById('latencyEl');
+    const debugPanel = document.getElementById('debugPanel');
+    const typingBadge = document.getElementById('typingBadge');
+    const textInputEl = document.getElementById('textInput');
+    const reconnectNotice = document.getElementById('reconnectNotice');
 
-    // ─── Sizing — set once, don't change dynamically ─────────────────────────
-    if (mobileFrame) {
-      mobileFrame.style.width = DISPLAY_W + "px";
-      mobileFrame.style.height = DISPLAY_H + "px";
-    }
+    // ─── Frame sizing ─────────────────────────────────────────────────────────
+    mobileFrame.style.width = DISPLAY_W + 'px';
+    mobileFrame.style.height = DISPLAY_H + 'px';
 
     // ─── State ────────────────────────────────────────────────────────────────
-    let sessionId = null, ws = null, streaming = false;
-    let logicalW = SERVER_W, logicalH = SERVER_H;
-    let lastMouseX = Math.round(SERVER_W / 2), lastMouseY = Math.round(SERVER_H / 2);
-    let canvasListenersAttached = false;
+    let sessionId = null;
+    let ws = null;
+    let streaming = false;
+    let logicalW = SERVER_W;
+    let logicalH = SERVER_H;
+    let lastMouseX = Math.round(SERVER_W / 2);
+    let lastMouseY = Math.round(SERVER_H / 2);
+    let inputListenersAttached = false;
     let peerConnection = null;
+    let typingMode = false;
+    let pingInterval = null;
+    let reconnectAttempts = 0;
+    const MAX_RECONNECT = 3;
 
     // ─── FPS counter ──────────────────────────────────────────────────────────
     let frameCount = 0;
-    setInterval(() => { fpsEl.textContent = frameCount + " fps"; frameCount = 0; }, 1000);
+    setInterval(() => {
+      fpsEl.textContent = frameCount + ' fps';
+      frameCount = 0;
+    }, 1000);
 
-    // ─── Debug ────────────────────────────────────────────────────────────────
-    function dbg(msg, isErr) {
+    // ─── Latency via ping ─────────────────────────────────────────────────────
+    let pingSentAt = 0;
+
+    // ─── Debug helper ─────────────────────────────────────────────────────────
+    function dbg(msg, isErr = false) {
       console.log(msg);
       debugPanel.textContent = msg;
-      debugPanel.className = isErr ? "err" : "";
+      debugPanel.className = isErr ? 'err' : '';
     }
 
-    // ─── Coordinate scaling ───────────────────────────────────────────────────
-    // CRITICAL FIX: With object-fit:fill, the video always fills the element
-    // exactly, so we simply scale by element size vs logical size.
-    // No letterbox offset needed.
-    function getVideoRect() {
-      return videoEl.getBoundingClientRect();
+    // ─── Coordinate scaling (object-fit: contain aware) ───────────────────────
+    // With object-fit:contain the video may have letterbox bars.
+    // We must compute the actual rendered rect of the video content, not the element.
+    function getVideoContentRect() {
+      const el = videoEl;
+      const elW = el.clientWidth;
+      const elH = el.clientHeight;
+      const vidW = el.videoWidth || logicalW;
+      const vidH = el.videoHeight || logicalH;
+
+      if (!vidW || !vidH) return el.getBoundingClientRect();
+
+      const elAR = elW / elH;
+      const vidAR = vidW / vidH;
+
+      let rendW, rendH, offX = 0, offY = 0;
+      if (vidAR > elAR) {
+        // Letterbox top/bottom
+        rendW = elW;
+        rendH = elW / vidAR;
+        offY = (elH - rendH) / 2;
+      } else {
+        // Letterbox left/right
+        rendH = elH;
+        rendW = elH * vidAR;
+        offX = (elW - rendW) / 2;
+      }
+
+      const base = el.getBoundingClientRect();
+      return {
+        left: base.left + offX,
+        top: base.top + offY,
+        width: rendW,
+        height: rendH,
+      };
     }
 
     function scaleX(clientX) {
-      const r = getVideoRect();
+      const r = getVideoContentRect();
       return Math.round(((clientX - r.left) / r.width) * logicalW);
     }
 
     function scaleY(clientY) {
-      const r = getVideoRect();
+      const r = getVideoContentRect();
       return Math.round(((clientY - r.top) / r.height) * logicalH);
     }
 
@@ -349,56 +603,63 @@
 
       peerConnection = new RTCPeerConnection({
         iceServers: [
-          { urls: "stun:stun.l.google.com:19302" },
-          { urls: "stun:stun1.l.google.com:19302" },
-          { urls: "stun:stun2.l.google.com:19302" },
-          { urls: "stun:stun3.l.google.com:19302" },
-          { urls: "stun:stun4.l.google.com:19302" },
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
         ],
+        iceCandidatePoolSize: 10,
+        // Prefer low-latency for screen-share use case
+        sdpSemantics: 'unified-plan',
       });
 
-      // MUST be registered before createOffer
       peerConnection.ontrack = (event) => {
-        dbg("[WebRTC] Track: " + event.track.kind);
+        dbg('[WebRTC] Track: ' + event.track.kind);
 
-        if (!videoEl.srcObject) {
-          videoEl.srcObject = new MediaStream();
-        }
+        if (!videoEl.srcObject) videoEl.srcObject = new MediaStream();
         videoEl.srcObject.addTrack(event.track);
 
-        if (event.track.kind === "audio") {
-          // Unmute video element to hear audio
-          videoEl.muted = false;
-          audioStateEl.textContent = "audio: on";
-          audioIndicator.classList.add("active");
+        if (event.track.kind === 'audio') {
+          // ⚠️ Do NOT set videoEl.muted = false here.
+          // Unmuting before play() resolves causes the browser's autoplay policy
+          // to block the video (browsers only allow autoplay for muted media).
+          // We unmute inside doPlay().then() after play() has already succeeded.
+          audioStateEl.textContent = 'audio: on';
+          audioIndicator.classList.add('active');
         }
 
-        if (event.track.kind === "video") {
-          if ("requestVideoFrameCallback" in videoEl) {
+        if (event.track.kind === 'video') {
+          if ('requestVideoFrameCallback' in videoEl) {
             const tick = () => { frameCount++; videoEl.requestVideoFrameCallback(tick); };
             videoEl.requestVideoFrameCallback(tick);
           }
 
+          // Update resolution display when metadata arrives
+          videoEl.addEventListener('loadedmetadata', () => {
+            resolutionEl.textContent = `${videoEl.videoWidth}×${videoEl.videoHeight}`;
+          }, { once: true });
+
           function doPlay() {
+            // Force muted before each attempt — guarantees autoplay policy allows it.
+            // We immediately unmute in .then() so audio is heard as soon as video plays.
+            videoEl.muted = true;
             return videoEl.play().then(() => {
-              dbg("[WebRTC] ▶ Playing");
-              overlay.classList.add("hidden");
-              if (videoEl.videoWidth > 0) {
-                resolutionEl.textContent = `${videoEl.videoWidth}×${videoEl.videoHeight}`;
-              }
+              dbg('[WebRTC] ▶ Playing');
+              overlay.classList.add('hidden');
+              videoEl.muted = false; // Unmute here — play() already granted, safe now
+              reconnectAttempts = 0;
             });
           }
 
           doPlay().catch(() => {
             const onCanPlay = () => {
-              videoEl.removeEventListener("canplay", onCanPlay);
+              videoEl.removeEventListener('canplay', onCanPlay);
               doPlay().catch(() => showPlayButton());
             };
-            videoEl.addEventListener("canplay", onCanPlay);
+            videoEl.addEventListener('canplay', onCanPlay);
             setTimeout(() => {
-              videoEl.removeEventListener("canplay", onCanPlay);
+              videoEl.removeEventListener('canplay', onCanPlay);
               doPlay().catch(() => showPlayButton());
-            }, 1200);
+            }, 1500);
           });
         }
       };
@@ -406,62 +667,65 @@
       peerConnection.onconnectionstatechange = () => {
         const s = peerConnection.connectionState;
         connStateEl.textContent = s;
-        dbg("[WebRTC] " + s, s === "failed" || s === "disconnected");
+        dbg('[WebRTC] ' + s, s === 'failed' || s === 'disconnected');
+        if (s === 'failed') {
+          tryReconnect();
+        }
       };
 
       peerConnection.oniceconnectionstatechange = () => {
-        console.log("[ICE]", peerConnection.iceConnectionState);
+        console.log('[ICE]', peerConnection.iceConnectionState);
       };
 
-      // Add transceivers BEFORE creating offer — recvonly for both
-      peerConnection.addTransceiver("video", { direction: "recvonly" });
-      peerConnection.addTransceiver("audio", { direction: "recvonly" });
+      // Prefer H264 (hardware decode on most devices) then VP8 as fallback
+      peerConnection.addTransceiver('video', { direction: 'recvonly' });
+      peerConnection.addTransceiver('audio', { direction: 'recvonly' });
 
-      // Prefer VP8 (most compatible with @roamhq/wrtc)
-      const caps = RTCRtpReceiver.getCapabilities("video");
-      if (caps) {
-        const vp8 = caps.codecs.filter(c => c.mimeType === "video/VP8");
-        const rest = caps.codecs.filter(c => c.mimeType !== "video/VP8");
-        if (vp8.length) {
-          const vt = peerConnection.getTransceivers().find(t => t.receiver.track.kind === "video");
-          if (vt) {
-            try { vt.setCodecPreferences([...vp8, ...rest]); } catch (_) { }
-          }
+      // Codec preference: H264 first, then VP8, then anything else
+      const vidCaps = RTCRtpReceiver.getCapabilities?.('video');
+      if (vidCaps) {
+        const h264 = vidCaps.codecs.filter(c => c.mimeType === 'video/H264');
+        const vp8 = vidCaps.codecs.filter(c => c.mimeType === 'video/VP8');
+        const rest = vidCaps.codecs.filter(c => c.mimeType !== 'video/H264' && c.mimeType !== 'video/VP8');
+        const ordered = [...h264, ...vp8, ...rest];
+        if (ordered.length) {
+          const vt = peerConnection.getTransceivers().find(t => t.receiver.track.kind === 'video');
+          if (vt) try { vt.setCodecPreferences(ordered); } catch (_) { }
         }
       }
     }
 
     function showPlayButton() {
-      dbg("[WebRTC] Autoplay blocked — tap to play");
-      overlay.classList.remove("hidden");
+      dbg('[WebRTC] Autoplay blocked — tap to play');
+      overlay.classList.remove('hidden');
       overlay.innerHTML = `
-      <p style="margin-bottom:12px;color:#c9d1d9;">Tap to start stream</p>
-      <button onclick="manualPlay()" style="padding:12px 24px;font-size:15px;
-        background:#238636;border:none;border-radius:8px;color:#fff;cursor:pointer">
-        ▶ Play Stream
-      </button>`;
+        <div class="overlay-icon">▶</div>
+        <p style="color:#c9d1d9;margin-bottom:14px;">Tap to start stream</p>
+        <button onclick="manualPlay()" style="padding:10px 24px;font-size:14px;
+          background:#238636;border:none;border-radius:8px;color:#fff;cursor:pointer;
+          font-family:inherit;font-weight:600;">▶ Play Stream</button>`;
     }
 
     function manualPlay() {
       videoEl.muted = false;
       videoEl.play()
-        .then(() => overlay.classList.add("hidden"))
+        .then(() => overlay.classList.add('hidden'))
         .catch(console.error);
     }
 
-    // ─── Session ──────────────────────────────────────────────────────────────
+    // ─── Session start ────────────────────────────────────────────────────────
     async function startSession() {
-      setStatus("connecting");
+      setStatus('connecting');
       startBtn.disabled = true;
       platformSel.disabled = true;
-      dbg("Connecting…");
+      dbg('Connecting…');
 
       try {
-        const r = await fetch(SERVER_URL + "/start-session", {
-          method: "POST",
+        const r = await fetch(SERVER_URL + '/start-session', {
+          method: 'POST',
           headers: {
-            "Content-Type": "application/json",
-            "ngrok-skip-browser-warning": "1",
+            'Content-Type': 'application/json',
+            'ngrok-skip-browser-warning': '1',
           },
           body: JSON.stringify({ platform: platformSel.value }),
         });
@@ -471,79 +735,138 @@
         sessionId = data.sessionId;
         if (data.width) logicalW = data.width;
         if (data.height) logicalH = data.height;
-        dbg("[Session] " + sessionId);
+        dbg('[Session] ' + sessionId);
 
-        const proto = SERVER_URL.startsWith("https") ? "wss" : "ws";
-        const host = SERVER_URL.replace(/^https?:\/\//, "");
-        ws = new WebSocket(`${proto}://${host}`);
-
-        ws.onopen = async () => {
-          dbg("[WS] Connected");
-
-          createPeerConnection();
-
-          const offer = await peerConnection.createOffer();
-          await peerConnection.setLocalDescription(offer);
-
-          // Wait for ICE gathering — increased timeout
-          await new Promise(resolve => {
-            if (peerConnection.iceGatheringState === "complete") { resolve(); return; }
-            const fn = () => {
-              if (peerConnection.iceGatheringState === "complete") {
-                peerConnection.removeEventListener("icegatheringstatechange", fn);
-                resolve();
-              }
-            };
-            peerConnection.addEventListener("icegatheringstatechange", fn);
-            setTimeout(() => {
-              peerConnection.removeEventListener("icegatheringstatechange", fn);
-              resolve();
-            }, 3000); // Increased from 2000ms
-          });
-
-          ws.send(JSON.stringify({
-            sessionId,
-            type: "start-stream",
-            offerSdp: peerConnection.localDescription.sdp,
-          }));
-          dbg("[WebRTC] Offer sent");
-        };
-
-        ws.onmessage = async (evt) => {
-          let msg;
-          try { msg = JSON.parse(evt.data); } catch { return; }
-
-          if (msg.type === "webrtc-answer") {
-            const sdp = typeof msg.sdpAnswer === "string"
-              ? msg.sdpAnswer
-              : msg.sdpAnswer?.sdp;
-            if (!sdp) { dbg("Empty SDP!", true); return; }
-            try {
-              await peerConnection.setRemoteDescription({ type: "answer", sdp });
-              dbg("[WebRTC] Answer accepted ✓");
-            } catch (e) {
-              dbg("[WebRTC] setRemoteDescription: " + e.message, true);
-            }
-            return;
-          }
-
-          handleControl(msg);
-        };
-
-        ws.onclose = () => { setStatus("disconnected"); cleanup(); };
-        ws.onerror = () => { setStatus("disconnected"); cleanup(); };
+        openWebSocket();
 
       } catch (err) {
-        dbg("Error: " + err.message, true);
-        setStatus("disconnected");
-        cleanup();
-        alert("Failed to start: " + err.message);
+        dbg('Error: ' + err.message, true);
+        setStatus('disconnected');
+        resetControls();
+        alert('Failed to start: ' + err.message);
       }
     }
 
+    function openWebSocket() {
+      const proto = SERVER_URL.startsWith('https') ? 'wss' : 'ws';
+      const host = SERVER_URL.replace(/^https?:\/\//, '');
+      ws = new WebSocket(`${proto}://${host}`);
+
+      ws.onopen = async () => {
+        dbg('[WS] Connected');
+        startPingKeepalive();
+
+        createPeerConnection();
+
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+
+        // Wait for ICE gathering (max 3s)
+        await new Promise(resolve => {
+          if (peerConnection.iceGatheringState === 'complete') { resolve(); return; }
+          const fn = () => {
+            if (peerConnection.iceGatheringState === 'complete') {
+              peerConnection.removeEventListener('icegatheringstatechange', fn);
+              resolve();
+            }
+          };
+          peerConnection.addEventListener('icegatheringstatechange', fn);
+          setTimeout(() => {
+            peerConnection.removeEventListener('icegatheringstatechange', fn);
+            resolve();
+          }, 3000);
+        });
+
+        ws.send(JSON.stringify({
+          sessionId,
+          type: 'start-stream',
+          offerSdp: peerConnection.localDescription.sdp,
+        }));
+        dbg('[WebRTC] Offer sent');
+      };
+
+      ws.onmessage = async (evt) => {
+        let msg;
+        try { msg = JSON.parse(evt.data); } catch { return; }
+
+        if (msg.type === 'pong') {
+          const rtt = Date.now() - pingSentAt;
+          latencyEl.textContent = rtt + ' ms';
+          return;
+        }
+
+        if (msg.type === 'webrtc-answer') {
+          const sdp = typeof msg.sdpAnswer === 'string'
+            ? msg.sdpAnswer
+            : msg.sdpAnswer?.sdp;
+          if (!sdp) { dbg('Empty SDP!', true); return; }
+          try {
+            await peerConnection.setRemoteDescription({ type: 'answer', sdp });
+            dbg('[WebRTC] Answer accepted ✓');
+          } catch (e) {
+            dbg('[WebRTC] setRemoteDescription: ' + e.message, true);
+          }
+          return;
+        }
+
+        handleControl(msg);
+      };
+
+      ws.onclose = () => {
+        stopPingKeepalive();
+        setStatus('disconnected');
+        if (streaming) tryReconnect();
+        else cleanup();
+      };
+
+      ws.onerror = () => {
+        stopPingKeepalive();
+        setStatus('disconnected');
+      };
+    }
+
+    // ─── Ping keepalive (prevent 60 s proxy timeouts) ─────────────────────────
+    function startPingKeepalive() {
+      stopPingKeepalive();
+      pingInterval = setInterval(() => {
+        if (ws?.readyState === WebSocket.OPEN) {
+          pingSentAt = Date.now();
+          ws.send(JSON.stringify({ sessionId, type: 'ping' }));
+        }
+      }, 25000);
+    }
+
+    function stopPingKeepalive() {
+      if (pingInterval) { clearInterval(pingInterval); pingInterval = null; }
+    }
+
+    // ─── Auto-reconnect ───────────────────────────────────────────────────────
+    function tryReconnect() {
+      if (!sessionId || reconnectAttempts >= MAX_RECONNECT) {
+        showReconnectNotice('Connection lost. Click Start to retry.', false);
+        cleanup();
+        return;
+      }
+      reconnectAttempts++;
+      const delay = Math.pow(2, reconnectAttempts) * 1000; // 2s, 4s, 8s
+      showReconnectNotice(`Reconnecting… attempt ${reconnectAttempts}/${MAX_RECONNECT}`, true);
+      setTimeout(() => {
+        if (!streaming) return; // user stopped manually
+        openWebSocket();
+      }, delay);
+    }
+
+    function showReconnectNotice(msg, autoHide) {
+      reconnectNotice.textContent = msg;
+      reconnectNotice.style.display = 'block';
+      if (autoHide) setTimeout(() => { reconnectNotice.style.display = 'none'; }, 3500);
+    }
+
+    // ─── Session stop ─────────────────────────────────────────────────────────
     function stopSession() {
+      reconnectAttempts = MAX_RECONNECT; // prevent auto-reconnect
       if (ws?.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ sessionId, type: "stop-stream" }));
+        ws.send(JSON.stringify({ sessionId, type: 'stop-stream' }));
         ws.close();
       }
       cleanup();
@@ -551,13 +874,15 @@
 
     function cleanup() {
       streaming = false;
-      startBtn.disabled = false;
-      platformSel.disabled = false;
-      stopBtn.disabled = true;
-      if (scrollBar) scrollBar.style.display = "none";
-      canvasListenersAttached = false;
-      audioStateEl.textContent = "audio: off";
-      audioIndicator.classList.remove("active");
+      stopPingKeepalive();
+      resetControls();
+      disarmTypingMode();
+
+      if (scrollBar) scrollBar.style.display = 'none';
+      inputListenersAttached = false;
+      audioStateEl.textContent = 'audio: off';
+      audioIndicator.classList.remove('active');
+      latencyEl.textContent = '—';
 
       if (peerConnection) {
         try { peerConnection.close(); } catch (_) { }
@@ -568,44 +893,55 @@
         videoEl.srcObject = null;
       }
       videoEl.muted = true;
-      overlay.classList.remove("hidden");
-      overlay.textContent = "Select a platform and click Start";
+      overlay.classList.remove('hidden');
+      overlay.innerHTML = `<div class="overlay-icon">📱</div><div>Select a platform and click <strong>▶ Start</strong></div>`;
+    }
+
+    function resetControls() {
+      startBtn.disabled = false;
+      platformSel.disabled = false;
+      stopBtn.disabled = true;
     }
 
     function handleControl(msg) {
       switch (msg.type) {
-        case "stream-started":
-          setStatus("connected");
+        case 'stream-started':
+          setStatus('connected');
           streaming = true;
           stopBtn.disabled = false;
-          if (scrollBar) scrollBar.style.display = "flex";
+          scrollBar.style.display = 'flex';
           if (msg.width) logicalW = msg.width;
           if (msg.height) logicalH = msg.height;
           lastMouseX = Math.round(logicalW / 2);
           lastMouseY = Math.round(logicalH / 2);
           attachInputListeners();
-          dbg("[Stream] Started — waiting for first frame…");
+          dbg('[Stream] Started — waiting for first frame…');
+          // Auto-focus textInput so user can type immediately
+          textInputEl.focus();
           break;
 
-        case "stream-stopped":
+        case 'stream-stopped':
           streaming = false;
-          overlay.classList.remove("hidden");
-          overlay.textContent = "Stream stopped";
+          overlay.classList.remove('hidden');
+          overlay.textContent = 'Stream stopped';
           break;
 
-        case "session-ended":
-          overlay.classList.remove("hidden");
-          overlay.textContent = msg.message || "Session ended";
+        case 'session-ended':
+          overlay.classList.remove('hidden');
+          overlay.textContent = msg.message || 'Session ended';
           cleanup();
           break;
 
-        case "error":
-          dbg("[Server] " + msg.message, true);
+        case 'error':
+          dbg('[Server] ' + msg.message, true);
           break;
       }
     }
 
-    function setStatus(s) { statusDot.className = "status-dot " + s; }
+    function setStatus(s) {
+      statusDot.className = 'status-dot ' + s;
+      connStateEl.textContent = s;
+    }
 
     // ─── Input sending ────────────────────────────────────────────────────────
     function sendInput(data) {
@@ -614,39 +950,33 @@
       }
     }
 
-    // ─── Attach input listeners to video element ──────────────────────────────
+    // ─── Attach listeners to the video element ────────────────────────────────
     function attachInputListeners() {
-      if (canvasListenersAttached) return;
-      canvasListenersAttached = true;
+      if (inputListenersAttached) return;
+      inputListenersAttached = true;
 
-      // ── Click ────────────────────────────────────────────────────────────────
-      videoEl.addEventListener("click", e => {
+      // ── Click ──────────────────────────────────────────────────────────────
+      videoEl.addEventListener('click', e => {
         if (!streaming) return;
         e.preventDefault();
         const x = clampX(scaleX(e.clientX));
         const y = clampY(scaleY(e.clientY));
-        sendInput({ type: "click", x, y });
+        sendInput({ type: 'click', x, y });
         dbg(`click (${x}, ${y})`);
-        // Auto-arm typing mode — if tap landed on an input the server will
-        // have focused it. The server's hasFocus check drops stray type events.
-        armTypingMode();
+        armTypingMode(); // always arm after click — server will determine if a field is focused
       });
 
-      // ── Mouse wheel ──────────────────────────────────────────────────────────
-      videoEl.addEventListener("wheel", e => {
+      // ── Mouse wheel ────────────────────────────────────────────────────────
+      videoEl.addEventListener('wheel', e => {
         e.preventDefault();
         if (!streaming) return;
-
         let dx = e.deltaX, dy = e.deltaY;
         if (e.deltaMode === 1) { dx *= 40; dy *= 40; }
         else if (e.deltaMode === 2) { dx *= 800; dy *= 800; }
-
-        // Cap at sane values
         dx = Math.max(-600, Math.min(600, dx));
         dy = Math.max(-600, Math.min(600, dy));
-
         sendInput({
-          type: "scroll",
+          type: 'scroll',
           x: clampX(scaleX(e.clientX)),
           y: clampY(scaleY(e.clientY)),
           deltaX: Math.round(dx),
@@ -654,18 +984,16 @@
         });
       }, { passive: false });
 
-      // ── Touch ────────────────────────────────────────────────────────────────
+      // ── Touch ──────────────────────────────────────────────────────────────
       let touchStartX = 0, touchStartY = 0;
       let touchLastY = 0, touchStartTime = 0;
-      let touchVelocity = 0;       // px/ms for momentum
-      let lastTouchTime = 0;
+      let touchVelocity = 0, lastTouchTime = 0;
       let momentumFrame = null;
 
-      videoEl.addEventListener("touchstart", e => {
+      videoEl.addEventListener('touchstart', e => {
         e.preventDefault();
         if (momentumFrame) { cancelAnimationFrame(momentumFrame); momentumFrame = null; }
         const t = e.touches[0];
-        touchStartX = touchLastY = t.clientX; // note: X stored in touchStartX
         touchStartX = t.clientX;
         touchStartY = t.clientY;
         touchLastY = t.clientY;
@@ -673,25 +1001,20 @@
         touchVelocity = 0;
       }, { passive: false });
 
-      videoEl.addEventListener("touchmove", e => {
+      videoEl.addEventListener('touchmove', e => {
         e.preventDefault();
         if (!streaming) return;
         const t = e.touches[0];
         const now = Date.now();
         const dt = now - lastTouchTime || 1;
-        const rawDy = (touchLastY - t.clientY);
-
-        // Velocity in px/ms (positive = scroll down)
+        const rawDy = touchLastY - t.clientY;
         touchVelocity = rawDy / dt;
         lastTouchTime = now;
         touchLastY = t.clientY;
-
-        // Scale to logical coords — multiply by 3x for snappy feel
         const dy = rawDy * 3.0;
         if (Math.abs(dy) < 1) return;
-
         sendInput({
-          type: "scroll",
+          type: 'scroll',
           x: clampX(scaleX(touchStartX)),
           y: Math.round(logicalH / 2),
           deltaX: 0,
@@ -699,7 +1022,7 @@
         });
       }, { passive: false });
 
-      videoEl.addEventListener("touchend", e => {
+      videoEl.addEventListener('touchend', e => {
         e.preventDefault();
         if (!streaming) return;
         const t = e.changedTouches[0];
@@ -707,49 +1030,40 @@
         const dx = Math.abs(t.clientX - touchStartX);
         const dy = Math.abs(t.clientY - touchStartY);
 
-        // Short tap = click
         if (dt < 280 && dx < 15 && dy < 15) {
           const x = clampX(scaleX(touchStartX));
           const y = clampY(scaleY(touchStartY));
-          sendInput({ type: "click", x, y });
+          sendInput({ type: 'click', x, y });
           dbg(`tap (${x}, ${y})`);
           armTypingMode();
           return;
         }
 
-        // Momentum scrolling — decay velocity over ~400ms
-        let velocity = touchVelocity * 3.0; // scaled
+        // Momentum scrolling
+        let velocity = touchVelocity * 3.0;
         const decay = 0.92;
-        const scaleCenter = clampX(scaleX(touchStartX));
+        const cx = clampX(scaleX(touchStartX));
 
         function momentumScroll() {
-          if (Math.abs(velocity) < 0.5 || !streaming) {
-            momentumFrame = null;
-            return;
-          }
+          if (Math.abs(velocity) < 0.5 || !streaming) { momentumFrame = null; return; }
           sendInput({
-            type: "scroll",
-            x: scaleCenter,
+            type: 'scroll', x: cx,
             y: Math.round(logicalH / 2),
-            deltaX: 0,
-            deltaY: Math.round(velocity * 16), // ~16ms per frame
+            deltaX: 0, deltaY: Math.round(velocity * 16),
           });
           velocity *= decay;
           momentumFrame = requestAnimationFrame(momentumScroll);
         }
-
-        if (Math.abs(touchVelocity) > 0.3) {
-          momentumFrame = requestAnimationFrame(momentumScroll);
-        }
+        if (Math.abs(touchVelocity) > 0.3) momentumFrame = requestAnimationFrame(momentumScroll);
       }, { passive: false });
 
-      // ── Mouse move (track for keyboard scroll target) ─────────────────────
-      videoEl.addEventListener("mousemove", e => {
+      // ── Mouse move (track for keyboard scroll target) ────────────────────
+      videoEl.addEventListener('mousemove', e => {
         lastMouseX = clampX(scaleX(e.clientX));
         lastMouseY = clampY(scaleY(e.clientY));
       }, { passive: true });
 
-      dbg("[Input] Listeners ready");
+      dbg('[Input] Listeners ready');
     }
 
     // ─── Scroll buttons ───────────────────────────────────────────────────────
@@ -759,111 +1073,98 @@
       let iv = null;
       const fire = () => {
         if (streaming) sendInput({
-          type: "scroll",
+          type: 'scroll',
           x: Math.round(logicalW / 2),
           y: Math.round(logicalH / 2),
-          deltaX: 0,
-          deltaY: dy,
+          deltaX: 0, deltaY: dy,
         });
       };
       const start = e => { e.preventDefault(); fire(); iv = setInterval(fire, 80); };
       const stop = () => clearInterval(iv);
-      btn.addEventListener("mousedown", start);
-      btn.addEventListener("touchstart", start, { passive: false });
-      btn.addEventListener("mouseup", stop);
-      btn.addEventListener("mouseleave", stop);
-      btn.addEventListener("touchend", stop);
+      btn.addEventListener('mousedown', start);
+      btn.addEventListener('touchstart', start, { passive: false });
+      btn.addEventListener('mouseup', stop);
+      btn.addEventListener('mouseleave', stop);
+      btn.addEventListener('touchend', stop);
     }
 
-    makeScrollBtn("scrollTopBtn", -3000);
-    makeScrollBtn("scrollUpBtn", -300);
-    makeScrollBtn("scrollDownBtn", 300);
-    makeScrollBtn("scrollBotBtn", 3000);
+    makeScrollBtn('scrollTopBtn', -3000);
+    makeScrollBtn('scrollUpBtn', -300);
+    makeScrollBtn('scrollDownBtn', 300);
+    makeScrollBtn('scrollBotBtn', 3000);
 
-    // ─── Typing mode ─────────────────────────────────────────────────────────
-    // When the user taps an input on the remote screen, we enter "typing mode".
-    // In this mode the local keyboard input bar is auto-focused and every
-    // keystroke is forwarded live (character by character) to the remote page.
-    // This is the most reliable way to type into Instagram / React inputs.
-
-    let typingMode = false;
-
-    // Called when a click lands on the remote screen — auto-enter typing mode
-    // if the remote element under the tap is an input/textarea.
-    // We can't know that for sure client-side, so we always arm typing mode
-    // after any tap and let the server's hasFocus check be the safety net.
+    // ─── Typing mode ──────────────────────────────────────────────────────────
+    // Always arm after any tap. textInput is always in the DOM now.
     function armTypingMode() {
       if (!streaming) return;
       typingMode = true;
-      const tb = document.getElementById("textInput");
-      if (tb) {
-        tb.placeholder = "Typing into remote screen… (Esc to stop)";
-        tb.focus();
-      }
-      dbg("⌨ Typing mode ON — keys go to remote screen");
+      typingBadge.classList.add('active');
+      textInputEl.placeholder = '⌨ Typing into remote screen… (Esc to stop)';
+      textInputEl.classList.add('typing-active');
+      textInputEl.focus();
+      dbg('⌨ Typing mode ON');
     }
 
     function disarmTypingMode() {
       typingMode = false;
-      const tb = document.getElementById("textInput");
-      if (tb) {
-        tb.placeholder = "Type text to send…";
-        tb.blur();
+      typingBadge.classList.remove('active');
+      textInputEl.placeholder = 'Click on screen then type here…';
+      textInputEl.classList.remove('typing-active');
+      dbg('[Input] Typing mode OFF');
+    }
+
+    // ─── Text input event handling ────────────────────────────────────────────
+    // textInput is ALWAYS in the DOM. Wire it up unconditionally.
+    textInputEl.addEventListener('keydown', e => {
+      if (!streaming) return;
+
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        disarmTypingMode();
+        return;
       }
-      dbg("[Input] Typing mode OFF");
-    }
 
-    // Wire up the text input box:
-    // - While in typing mode, each keystroke is forwarded immediately.
-    // - Enter sends accumulated text and keeps typing mode.
-    // - Escape exits typing mode.
-    const textInputEl = document.getElementById("textInput");
-    if (textInputEl) {
-      textInputEl.addEventListener("keydown", e => {
-        if (!streaming) return;
+      // Even without explicit typing-mode, still forward keys when focused
+      e.stopPropagation();
 
-        if (e.key === "Escape") {
-          e.preventDefault();
-          disarmTypingMode();
-          return;
-        }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        sendInput({ type: 'keypress', key: 'Enter' });
+        textInputEl.value = '';
+        return;
+      }
 
-        if (!typingMode) return; // normal local input behaviour when not in typing mode
+      if (e.key === 'Backspace') {
+        e.preventDefault();
+        sendInput({ type: 'keypress', key: 'Backspace' });
+        textInputEl.value = textInputEl.value.slice(0, -1);
+        return;
+      }
 
-        e.stopPropagation(); // don't let the global keydown handler fire too
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        sendInput({ type: 'keypress', key: 'Tab' });
+        return;
+      }
 
-        if (e.key === "Enter") {
-          e.preventDefault();
-          // Send Enter to remote page
-          sendInput({ type: "keypress", key: "Enter" });
-          textInputEl.value = "";
-          return;
-        }
+      // Let browser handle adding characters, forward via oninput below
+    });
 
-        if (e.key === "Backspace") {
-          e.preventDefault();
-          sendInput({ type: "keypress", key: "Backspace" });
-          // Mirror backspace locally
-          textInputEl.value = textInputEl.value.slice(0, -1);
-          return;
-        }
+    textInputEl.addEventListener('input', e => {
+      if (!streaming) return;
+      const val = textInputEl.value;
+      if (!val) return;
+      sendInput({ type: 'type', text: val });
+      textInputEl.value = ''; // clear after forwarding
+    });
 
-        // For printable chars, let the browser add them to the input value,
-        // then forward in the oninput handler below (avoids duplicate sends).
-      });
+    // Focus textInput when user clicks the video (so typing goes to input immediately)
+    videoEl.addEventListener('click', () => {
+      textInputEl.focus();
+    }, { capture: true }); // capture phase — runs before the main click handler
 
-      textInputEl.addEventListener("input", e => {
-        if (!typingMode || !streaming) return;
-        // The input value just changed — forward whatever was typed/pasted.
-        const val = textInputEl.value;
-        if (!val) return;
-        sendInput({ type: "type", text: val });
-        textInputEl.value = ""; // clear after forwarding
-      });
-    }
-
-    // ─── Global keyboard (when text input is NOT focused) ────────────────────
-    document.addEventListener("keydown", e => {
+    // ─── Global keyboard (focus NOT on textInput) ─────────────────────────────
+    document.addEventListener('keydown', e => {
       if (document.activeElement === textInputEl) return; // handled above
       if (!streaming) return;
 
@@ -871,39 +1172,46 @@
         ArrowDown: 120, ArrowUp: -120,
         PageDown: 600, PageUp: -600,
       };
+
       if (scrollKeys[e.key] !== undefined) {
         e.preventDefault();
         sendInput({
-          type: "scroll",
+          type: 'scroll',
           x: lastMouseX, y: lastMouseY,
           deltaX: 0, deltaY: scrollKeys[e.key],
         });
         return;
       }
 
-      if (e.key === "Escape") { disarmTypingMode(); return; }
+      if (e.key === 'Escape') { disarmTypingMode(); return; }
 
       e.preventDefault();
       if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
-        sendInput({ type: "keypress", key: e.key });
+        sendInput({ type: 'keypress', key: e.key });
       } else {
-        sendInput({ type: "keydown", key: e.key });
+        sendInput({ type: 'keydown', key: e.key });
       }
     });
 
-    document.addEventListener("keyup", e => {
+    document.addEventListener('keyup', e => {
       if (document.activeElement === textInputEl) return;
       if (!streaming) return;
-      if (e.key.length > 1) sendInput({ type: "keyup", key: e.key });
+      if (e.key.length > 1) sendInput({ type: 'keyup', key: e.key });
     });
 
-    // ─── Text input Send button ───────────────────────────────────────────────
+    // ─── Toolbar helper buttons ────────────────────────────────────────────────
     function sendText() {
-      if (!textInputEl) return;
       const val = textInputEl.value.trim();
       if (!val) return;
-      sendInput({ type: "type", text: val });
-      textInputEl.value = "";
+      sendInput({ type: 'type', text: val });
+      textInputEl.value = '';
+      textInputEl.focus();
+    }
+
+    function sendSpecialKey(key) {
+      if (!streaming) return;
+      sendInput({ type: 'keypress', key });
+      textInputEl.focus();
     }
   </script>
 </body>

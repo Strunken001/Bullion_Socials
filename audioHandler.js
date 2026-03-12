@@ -26,18 +26,16 @@ class AudioHandler {
         this._hasAudio = true;
         this._lastAudioTime = Date.now();
 
-        // Combine with leftover overflow
+        // Combined with leftover overflow
         const combined = Buffer.concat([this._overflow, buffer]);
-        const bytesPerFrame = SAMPLES_PER_FRAME * 2; // 2 bytes per Int16 sample
+        const bytesPerFrame = SAMPLES_PER_FRAME * 2; // 16-bit PCM (2 bytes/sample)
         let offset = 0;
 
         while (offset + bytesPerFrame <= combined.length) {
-            const frameBuffer = combined.slice(offset, offset + bytesPerFrame);
-            const samples = new Int16Array(
-                frameBuffer.buffer,
-                frameBuffer.byteOffset,
-                SAMPLES_PER_FRAME
-            );
+            const frameBuffer = combined.subarray(offset, offset + bytesPerFrame);
+            
+            // Create a COPY of the buffer to avoid external mutation if the source buffer is reused
+            const samples = new Int16Array(new Uint8Array(frameBuffer).buffer);
 
             try {
                 this.audioSource.onData({
@@ -48,7 +46,7 @@ class AudioHandler {
                     numberOfFrames: SAMPLES_PER_FRAME,
                 });
             } catch (err) {
-                // Don't crash on occasional bad frames
+                // Silently drop bad frames to maintain stream continuity
             }
 
             offset += bytesPerFrame;

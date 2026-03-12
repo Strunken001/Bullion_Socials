@@ -29,6 +29,12 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "client.html"));
 });
 
+// Health check — used by Docker HEALTHCHECK and load balancers
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', uptime: Math.round(process.uptime()), ts: Date.now() });
+});
+
+
 (async () => {
   await initBrowser();
 })();
@@ -330,7 +336,11 @@ wss.on("connection", (ws, req) => {
       return;
     }
 
-    if (data.type === "ping") return;
+    if (data.type === 'ping') {
+      // Respond with pong so client can measure round-trip latency
+      ws.send(JSON.stringify({ type: 'pong', ts: Date.now() }));
+      return;
+    }
 
     // ── Input events ─────────────────────────────────────────────────────────
     await handleInput(session.page, data);

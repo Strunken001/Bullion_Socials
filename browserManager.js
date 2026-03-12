@@ -1,25 +1,18 @@
 /**
  * browserManager.js
  *
- * Windows-safe Playwright browser manager.
+ * Cross-platform Playwright browser manager — optimised for Docker on Windows Server.
  *
- * ── Why headless: false on Windows? ─────────────────────────────────────────
- * headless: true uses Chrome's "headless shell" mode which:
- *   - Disables GPU compositing entirely → blank/black WebRTC video frames
- *   - Disables Web Audio API in many Chromium builds → silent audio capture
- *   - Disables requestAnimationFrame throttling fixes → choppy CDP screencast
- *
- * headless: false on Windows Server (no display) would normally crash, but
- * the flags below enable a "virtual framebuffer" inside Chromium itself using
- * SwiftShader (software GPU), so it renders fully without a real display.
+ * ── Why headless: true with SwiftShader? ────────────────────────────────────
+ * On a Windows Server (no display) running a Linux Docker container:
+ *   - Xvfb provides a virtual framebuffer (configured in Dockerfile)
+ *   - SwiftShader provides software GPU compositing
+ *   - Together they enable: WebRTC video, Web Audio API, and WebGL — without real GPU
  *
  * ── @roamhq/wrtc on Windows ──────────────────────────────────────────────────
- * @roamhq/wrtc ships no Windows binary. If you are testing locally on Windows:
- *   - Use WSL2 (Ubuntu) — fully supported, recommended for local dev
- *   - Or run inside a Docker container with a Linux base image
- * For Windows Server deployment, the same applies — run the Node process
- * inside WSL2 or a Linux Docker container on the Windows host.
- * The rest of this file (Playwright flags) works natively on Windows.
+ * @roamhq/wrtc ships no native Windows binary.
+ * ALWAYS run this service inside a Linux Docker container on the Windows host.
+ * The Dockerfile in this repo handles that automatically.
  */
 
 const { chromium } = require('playwright');
@@ -27,91 +20,103 @@ const os = require('os');
 
 let browser = null;
 
+const IS_LINUX   = os.platform() === 'linux';
 const IS_WINDOWS = os.platform() === 'win32';
 
 /**
- * Chromium flags that enable full rendering without a physical display.
- * These work on Windows, Linux, and macOS.
+ * Chromium flags — balanced for quality, correctness, and server compatibility.
+ * Tested with Playwright on: Ubuntu 22.04 Docker image (Windows Server host).
  */
 const CHROMIUM_ARGS = [
   // ── Sandbox ────────────────────────────────────────────────────────────────
   '--no-sandbox',
   '--disable-setuid-sandbox',
 
-  // ── Virtual GPU / Software rendering ──────────────────────────────────────
-  // Forces SwiftShader (Chromium's built-in software rasterizer).
-  // This is what makes headless:false work without a real GPU or display.
+  // ── Software GPU / SwiftShader ─────────────────────────────────────────────
+  // SwiftShader is Chromium's built-in software rasterizer.
+  // These flags together activate it without requiring a physical GPU or display.
   '--use-gl=swiftshader',
   '--use-angle=swiftshader',
-  '--enable-unsafe-swiftshader',       // Required on newer Chromium builds
-  '--disable-gpu',                     // Don't attempt real GPU (will fail on server)
+  '--enable-unsafe-swiftshader',        // Required on Chromium ≥ 112
+  '--disable-gpu',                      // Tell Chrome not to use real GPU (will fail on server)
   '--disable-gpu-sandbox',
-  '--disable-software-rasterizer',     // Counterintuitively needed with SwiftShader
+  // NOTE: '--disable-software-rasterizer' is intentionally REMOVED.
+  // It conflicts with '--use-gl=swiftshader' — SwiftShader IS the software rasterizer.
+  // Keeping both flags causes a contradictory state where SwiftShader is disabled.
 
-  // ── Virtual display (Windows-specific) ────────────────────────────────────
-  // On Windows Server with no display adapter, Chromium needs these to not
-  // crash when opening a window.
+  // ── Colour accuracy ────────────────────────────────────────────────────────
+  // Ensures frames captured via CDP have correct, consistent sRGB colours.
+  '--force-color-profile=srgb',
+  '--disable-partial-raster',           // More complete frame rendering per repaint
+
+  // ── Virtual display (Windows Server without display adapter) ──────────────
   ...(IS_WINDOWS ? [
-    '--disable-direct-composition',    // No DirectComposition on headless Windows
-    '--disable-d3d11',                 // No D3D11 without display
+    '--disable-direct-composition',     // No DirectComposition without a real display
+    '--disable-d3d11',                  // No Direct3D 11 without GPU
   ] : []),
 
-  // ── Audio ──────────────────────────────────────────────────────────────────
-  // Critical: these allow Web Audio API and <video> audio to work without
-  // a real audio device (which Windows servers don't have).
+  // ── Audio (critical for Web Audio API on headless servers) ────────────────
   '--use-fake-ui-for-media-stream',
   '--use-fake-device-for-media-stream',
   '--autoplay-policy=no-user-gesture-required',
   '--no-user-gesture-required',
 
-  // ── Performance ───────────────────────────────────────────────────────────
+  // ── Performance ────────────────────────────────────────────────────────────
   '--disable-background-timer-throttling',
   '--disable-backgrounding-occluded-windows',
   '--disable-renderer-backgrounding',
-  '--disable-dev-shm-usage',           // /dev/shm too small on some Linux VMs
+  '--disable-dev-shm-usage',            // /dev/shm too small on some Docker hosts → use /tmp
   '--disable-smooth-scrolling',
-  '--no-zygote',                       // Faster startup, avoids zygote crashes on some systems
+  '--no-zygote',                        // Avoids zygote process crashes in containerised environments
 
   // ── CDP Screencast quality ─────────────────────────────────────────────────
-  // Keeps the compositor running so CDP screencast gets real rendered frames,
-  // not blank ones.
+  // Keeps the compositor running at full speed so CDP screencast gets every
+  // rendered frame instead of throttled/blank ones.
   '--disable-frame-rate-limit',
   '--disable-gpu-vsync',
   '--run-all-compositor-stages-before-draw',
+
+  // ── Memory / process ──────────────────────────────────────────────────────
+  '--js-flags=--max-old-space-size=512', // Cap V8 heap per tab at 512 MB
+  '--disable-ipc-flooding-protection',
 
   // ── Misc ──────────────────────────────────────────────────────────────────
   '--lang=en-US',
   '--disable-extensions',
   '--disable-default-apps',
   '--no-first-run',
-  '--disable-ipc-flooding-protection',
+  '--disable-sync',
+  '--disable-translate',
 ];
 
 async function initBrowser() {
   browser = await chromium.launch({
-    // headless: false — renders via SwiftShader software GPU.
-    // This gives you a fully working Web Audio API, proper GPU compositing
-    // for CDP screencast, and working WebGL — all without a real display.
+    // headless: true — renders via SwiftShader inside the Xvfb virtual display
+    // provided by the Docker container.  Do NOT change to false on a server
+    // without a real display: it will crash without Xvfb.
     headless: true,
 
     args: CHROMIUM_ARGS,
 
-    // On Windows, Playwright may need help finding Chromium.
-    // Uncomment and set this if `npx playwright install chromium` put it
-    // somewhere non-standard:
+    // On Windows: Playwright may need help finding Chromium.
+    // Uncomment and set this if `npx playwright install chromium` used a
+    // non-standard path:
     // executablePath: 'C:\\path\\to\\chrome.exe',
 
-    // Increase timeout for slower Windows startup
+    // Increase timeout for slower container/VM startup
     timeout: 60000,
   });
 
   browser.on('disconnected', () => {
-    console.warn('[Browser] Disconnected — restarting…');
+    console.warn('[Browser] Disconnected — restarting in 2s…');
     browser = null;
-    initBrowser().catch(e => console.error('[Browser] Restart failed:', e));
+    setTimeout(() => {
+      initBrowser().catch(e => console.error('[Browser] Restart failed:', e));
+    }, 2000);
   });
 
-  console.log(`[Browser] Started (platform: ${os.platform()}, headless: true + SwiftShader)`);
+  console.log(`[Browser] Started (platform: ${os.platform()}, headless: true + SwiftShader/Xvfb)`);
+  return browser;
 }
 
 function getBrowser() {

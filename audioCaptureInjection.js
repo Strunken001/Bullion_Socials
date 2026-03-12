@@ -28,36 +28,42 @@
     function getOrCreateCaptureContext() {
         if (captureContext && captureContext.state !== 'closed') return captureContext;
 
-        captureContext = new (window.AudioContext || window.webkitAudioContext)({
-            sampleRate: SAMPLE_RATE,
-            latencyHint: 'playback',
-        });
+        try {
+            captureContext = new (window.AudioContext || window.webkitAudioContext)({
+                sampleRate: SAMPLE_RATE,
+                latencyHint: 'interactive', // Changed from playback for lower latency
+            });
 
-        // Resume immediately — we have --autoplay-policy=no-user-gesture-required
-        captureContext.resume().catch(() => { });
+            console.log('[AudioCapture] Created AudioContext at', captureContext.sampleRate, 'Hz');
 
-        // A single destination node that everything feeds into
-        destinationNode = captureContext.createMediaStreamDestination();
+            // Resume immediately — we have --autoplay-policy=no-user-gesture-required
+            captureContext.resume().catch(() => { });
 
-        // ScriptProcessor to capture PCM (deprecated but still reliable in Chromium)
-        processorNode = captureContext.createScriptProcessor(BUFFER_SIZE, 1, 1);
-        destinationNode.stream.getAudioTracks(); // keep stream alive
+            // A single destination node that everything feeds into
+            destinationNode = captureContext.createMediaStreamDestination();
 
-        processorNode.onaudioprocess = (e) => {
-            if (!wsRef || wsRef.readyState !== WebSocket.OPEN) return;
-            const float32 = e.inputBuffer.getChannelData(0);
-            const pcm = new Int16Array(float32.length);
-            for (let i = 0; i < float32.length; i++) {
-                const clamped = Math.max(-1, Math.min(1, float32[i]));
-                pcm[i] = clamped < 0 ? clamped * 0x8000 : clamped * 0x7FFF;
-            }
-            wsRef.send(pcm.buffer);
-        };
+            // ScriptProcessor to capture PCM (deprecated but still reliable in Chromium)
+            processorNode = captureContext.createScriptProcessor(BUFFER_SIZE, 1, 1);
+            
+            processorNode.onaudioprocess = (e) => {
+                if (!wsRef || wsRef.readyState !== WebSocket.OPEN) return;
+                const float32 = e.inputBuffer.getChannelData(0);
+                const pcm = new Int16Array(float32.length);
+                for (let i = 0; i < float32.length; i++) {
+                    const clamped = Math.max(-1, Math.min(1, float32[i]));
+                    pcm[i] = clamped < 0 ? clamped * 0x8000 : clamped * 0x7FFF;
+                }
+                wsRef.send(pcm.buffer);
+            };
 
-        destinationNode.connect(processorNode);
-        processorNode.connect(captureContext.destination);
-
-        return captureContext;
+            destinationNode.connect(processorNode);
+            processorNode.connect(captureContext.destination);
+            
+            return captureContext;
+        } catch (err) {
+            console.error('[AudioCapture] Failed to create AudioContext:', err.message);
+            return null;
+        }
     }
 
     // ── Helper: connect any AudioNode source to our capture graph ─────────────

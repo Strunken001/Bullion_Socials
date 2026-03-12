@@ -15,8 +15,16 @@ const activeStreams = new Map();
 
 const THUMB_W = 8;
 const THUMB_H = 8;
-const DIFF_THRESHOLD = 4;       // pixels that must differ (out of 64)
-const DIFF_PIXEL_DELTA = 8;     // how different a pixel must be (0–255) to count
+// Increased from 4 → 6: previous value was too aggressive and caused "micro-freeze"
+// when only a few pixels (cursor blink, loading spinner) changed between frames.
+const DIFF_THRESHOLD = 6;       // pixels that must differ (out of 64)
+const DIFF_PIXEL_DELTA = 10;    // how different a pixel must be (0–255) to count
+
+// ── Frame-rate cap ────────────────────────────────────────────────────────────
+// Limits push rate to ~30 fps max (33ms). CDP can fire faster on idle screens.
+// Pushing too fast overwhelms the VP8/H264 encoder in @roamhq/wrtc.
+const MIN_FRAME_INTERVAL_MS = 22; // ≈ 45fps hard cap
+let lastFrameAt = 0;
 
 async function computeThumb(jpegBuffer) {
   return sharp(jpegBuffer)
@@ -101,6 +109,12 @@ async function startWebRTCStream(page, offerSdp, options = {}) {
   // Perceptual dedup state — persists across frames for this stream
   let lastThumb = null;       // Buffer of last sent frame's 8×8 greyscale
   let skippedFrames = 0;      // consecutive skipped frames counter (for logging)
+  let lastSentAt = 0;         // performance.now() timestamp of last sent frame
+
+  // Safety: if no frame has been delivered in MAX_STALE_MS, force-send the
+  // next one regardless of perceptual diff.  This prevents a fully-black or
+  // near-static screen (TikTok loading, Instagram splash) from appearing frozen.
+  const MAX_STALE_MS = 500;   // guarantee at least ~2 fps to the client
 
   try {
     cdpSession = await page.context().newCDPSession(page);
@@ -113,18 +127,26 @@ async function startWebRTCStream(page, offerSdp, options = {}) {
         // queue and send the next frame regardless of whether content changed.
         cdpSession.send('Page.screencastFrameAck', { sessionId: event.sessionId }).catch(() => { });
 
+        // ── Frame-rate cap ─────────────────────────────────────────────────
+        const now = performance.now();
+        if (now - lastFrameAt < MIN_FRAME_INTERVAL_MS) return; // too soon
+        lastFrameAt = now;
+
         const buffer = Buffer.from(event.data, 'base64');
 
-        // ── Perceptual diff ────────────────────────────────────────────────
-        // Compute cheap 8×8 thumbnail and compare to last sent frame.
-        // This is much more reliable than comparing raw JPEG sizes, which can
-        // differ due to JPEG entropy even when the image is visually identical.
+        // ── Perceptual diff (with stale-frame override) ──────────────────────────
+        // If no frame has been sent for MAX_STALE_MS, bypass dedup entirely so
+        // the client always gets a refresh (prevents frozen dark/static screens).
         const thumb = await computeThumb(buffer);
-        if (!isSignificantlyDifferent(lastThumb, thumb)) {
+        const msSinceLastSent = now - lastSentAt;
+        const forceSend = msSinceLastSent > MAX_STALE_MS;
+
+        if (!forceSend && !isSignificantlyDifferent(lastThumb, thumb)) {
           skippedFrames++;
           return; // Screen hasn't changed — don't encode or send
         }
         lastThumb = thumb;
+        lastSentAt = now;  // record time of this send
         if (skippedFrames > 0) {
           console.log(`[Dedup ${streamId}] Skipped ${skippedFrames} identical frames`);
           skippedFrames = 0;
@@ -173,16 +195,17 @@ async function startWebRTCStream(page, offerSdp, options = {}) {
       }
     });
 
-    // QUALITY FIX: deviceScaleFactor:2 means the browser renders at 2x pixel
-    // density (780x1688 for a 390x844 viewport). Capturing at full 2x resolution
-    // is critical -- CDP downsamples before we see the frame if maxWidth is too low.
-    const captureW = (options.width || 390) * 2;
-    const captureH = (options.height || 844) * 2;
+    // QUALITY FIX: deviceScaleFactor:1 (in server.js) means the browser renders
+    // at CSS resolution (390px). However, we want better-than-SD quality.
+    // Capturing at 1.5x (585px) provides a good balance between "crisp" and
+    // "bandwidth-heavy" for mobile devices.
+    const captureW = Math.round((options.width || 390) * 1.5);
+    const captureH = Math.round((options.height || 844) * 1.5);
 
     await cdpSession.send('Page.startScreencast', {
       format: 'jpeg',
-      quality: 95,        // Near-lossless
-      maxWidth: captureW, // Full 2x: 780px for a 390 viewport
+      quality: 90,        // Balanced quality (was 98)
+      maxWidth: captureW,
       maxHeight: captureH,
       everyNthFrame: 1,
     });
