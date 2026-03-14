@@ -52,7 +52,7 @@ function isSignificantlyDifferent(thumbA, thumbB) {
 async function startWebRTCStream(page, offerSdp, options = {}) {
   const streamId = Math.random().toString(36).substring(2, 9);
 
-  // Create WebRTC components
+  // Create WebRTC components with broad STUN fallback for Windows Server firewalls
   const peerConnection = new RTCPeerConnection({
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
@@ -60,8 +60,10 @@ async function startWebRTCStream(page, offerSdp, options = {}) {
       { urls: 'stun:stun2.l.google.com:19302' },
       { urls: 'stun:stun3.l.google.com:19302' },
       { urls: 'stun:stun4.l.google.com:19302' },
+      { urls: 'stun:global.stun.twilio.com:3478' }, // Reliable fallback STUN
+      { urls: 'stun:stun.services.mozilla.com' }    // Reliable fallback STUN
     ],
-    // Improve connection reliability
+    // Improve connection reliability (especially critical for Windows)
     iceCandidatePoolSize: 10,
   });
 
