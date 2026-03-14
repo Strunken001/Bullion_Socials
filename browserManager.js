@@ -28,10 +28,13 @@ const IS_WINDOWS = os.platform() === 'win32';
  * Tested with Playwright on: Ubuntu 22.04 Docker image (Windows Server host).
  */
 const CHROMIUM_ARGS = [
-  // ── Sandbox ────────────────────────────────────────────────────────────────
+  // ── Sandbox & Web Security ─────────────────────────────────────────────────
   '--no-sandbox',
   '--disable-setuid-sandbox',
   '--allow-running-insecure-content',
+  '--disable-web-security',              // Bypass CORS policy blocks
+  '--disable-site-isolation-trials',     // Prevents cross-origin iframe issues
+
   // ── Software GPU / SwiftShader ─────────────────────────────────────────────
   // SwiftShader is Chromium's built-in software rasterizer.
   // These flags together activate it without requiring a physical GPU or display.

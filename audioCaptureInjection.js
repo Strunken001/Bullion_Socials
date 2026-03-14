@@ -64,7 +64,10 @@
                 wsRef.send(pcm.buffer);
             };
 
-            destinationNode.connect(processorNode);
+            // FIX: destinationNode (MediaStreamDestination) has no output.
+            // We must create a MediaStreamSource from it to pipe through the processor.
+            const captureSource = captureContext.createMediaStreamSource(destinationNode.stream);
+            captureSource.connect(processorNode);
             processorNode.connect(captureContext.destination);
             
             return captureContext;
@@ -75,26 +78,32 @@
     }
 
     // ── Bridging Logic ────────────────────────────────────────────────────────
-    function bridgeContext(ctx) {
-        if (!ctx || ctx === captureContext || bridgedNodes.has(ctx.destination)) return;
+    // We intercept any AudioNode connecting to a context's destination.
+    const OrigAudioNodeConnect = window.AudioNode.prototype.connect;
+    window.AudioNode.prototype.connect = function(destination, outputIndex, inputIndex) {
+        const result = OrigAudioNodeConnect.apply(this, arguments);
         
-        try {
-            console.log('[AudioCapture] Bridging AudioContext destination');
+        // If they connect to the final destination, mirror it to our capture context
+        if (destination && destination === this.context.destination) {
             const captureCtx = getOrCreateCaptureContext();
-            
-            // Mirror the output of this context into our capture context
-            const dest = ctx.createMediaStreamDestination();
-            ctx.destination.connect(dest); // Note: This might not work on all sites if destination is already linked
-            
-            // Instead of connecting directly to destination (which might be occupied),
-            // we try to use MediaStreamSource to bridge.
-            const source = captureCtx.createMediaStreamSource(dest.stream);
-            source.connect(destinationNode);
-            
-            bridgedNodes.add(ctx.destination);
-        } catch (err) {
-            console.warn('[AudioCapture] Failed to bridge context:', err.message);
+            if (captureCtx && destinationNode && this.context !== captureCtx) {
+                try {
+                    if (!this.__bridgedDest) {
+                        this.__bridgedDest = this.context.createMediaStreamDestination();
+                        OrigAudioNodeConnect.call(this, this.__bridgedDest, outputIndex);
+                        const source = captureCtx.createMediaStreamSource(this.__bridgedDest.stream);
+                        source.connect(destinationNode);
+                    }
+                } catch(e) {
+                    console.warn('[AudioCapture] Bridging failed:', e.message);
+                }
+            }
         }
+        return result;
+    };
+
+    function bridgeContext(ctx) {
+        // Obsolete: Handled dynamically by AudioNode.prototype.connect hook above
     }
 
     // ── Injection: AudioContext Hook ──────────────────────────────────────────

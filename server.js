@@ -80,7 +80,9 @@ app.post("/start-session", async (req, res) => {
         "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
       extraHTTPHeaders: { "Accept-Language": "en-US,en;q=0.9" },
       bypassCSP: true,
-      permissions: ["microphone", "camera"],
+      permissions: ["microphone", "camera", "geolocation", "notifications"],
+      // Instagram's Permissions-Policy checks for bluetooth and throws an error if unhandled.
+      // Easiest bypass is just to ignore the specific console log below.
     });
 
     // Inject audio capture hooks before any page script runs
@@ -91,10 +93,15 @@ app.post("/start-session", async (req, res) => {
     // Relay browser console for debugging
     page.on("console", (msg) => {
       const text = msg.text();
+      // Suppress known noisy/irrelevant browser logs
       if (
         !text.includes("deprecated") &&
         !text.includes("Failed to load resource") &&
-        !text.includes("ERR_")
+        !text.includes("ERR_") &&
+        !text.includes("Unrecognized feature: 'bluetooth'") &&
+        !text.includes("blocked by CORS policy") &&
+        !text.includes("This is a browser feature intended for developers") &&
+        !text.includes("See https://www.facebook.com/selfxss")
       ) {
         console.log(`[Browser] ${text}`);
       }
