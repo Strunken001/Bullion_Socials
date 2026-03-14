@@ -31,7 +31,7 @@ const CHROMIUM_ARGS = [
   // ── Sandbox ────────────────────────────────────────────────────────────────
   '--no-sandbox',
   '--disable-setuid-sandbox',
-
+  '--allow-running-insecure-content',
   // ── Software GPU / SwiftShader ─────────────────────────────────────────────
   // SwiftShader is Chromium's built-in software rasterizer.
   // These flags together activate it without requiring a physical GPU or display.
