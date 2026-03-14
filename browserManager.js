@@ -60,6 +60,9 @@ const CHROMIUM_ARGS = [
   '--use-fake-device-for-media-stream',
   '--autoplay-policy=no-user-gesture-required',
   '--no-user-gesture-required',
+  '--audio-output-channels=1',           // Simplify to mono for capture
+  '--disable-features=AudioServiceSandbox', // Prevents sandbox issues with virtual audio
+  // Ensure '--mute-audio' is NEVER added here.
 
   // ── Performance ────────────────────────────────────────────────────────────
   '--disable-background-timer-throttling',

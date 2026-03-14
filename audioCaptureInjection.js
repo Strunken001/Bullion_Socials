@@ -11,48 +11,56 @@
  * the Web Audio graph.
  */
 (function installAudioHooks() {
-    // Prevent double-installation across navigations
+    // Prevent double-installation
     if (window.__audioCaptureInstalled) return;
     window.__audioCaptureInstalled = true;
 
-    // ── Shared state ──────────────────────────────────────────────────────────
+    console.log('[AudioCapture] Installing robust hooks...');
+
+    // ── Shared State ──────────────────────────────────────────────────────────
     let captureContext = null;
-    let destinationNode = null;   // MediaStreamAudioDestinationNode
+    let destinationNode = null;
     let processorNode = null;
     let wsRef = null;
-    let connectedSources = new WeakSet();
+    
+    // Track all AudioContexts created by the page
+    const knownContexts = new Set();
+    const bridgedNodes = new WeakSet();
 
     const SAMPLE_RATE = 48000;
     const BUFFER_SIZE = 4096;
 
+    // ── Capture Graph Setup ───────────────────────────────────────────────────
     function getOrCreateCaptureContext() {
         if (captureContext && captureContext.state !== 'closed') return captureContext;
 
         try {
             captureContext = new (window.AudioContext || window.webkitAudioContext)({
                 sampleRate: SAMPLE_RATE,
-                latencyHint: 'interactive', // Changed from playback for lower latency
+                latencyHint: 'interactive',
             });
 
-            console.log('[AudioCapture] Created AudioContext at', captureContext.sampleRate, 'Hz');
+            console.log('[AudioCapture] Created CaptureContext at', captureContext.sampleRate, 'Hz');
 
-            // Resume immediately — we have --autoplay-policy=no-user-gesture-required
             captureContext.resume().catch(() => { });
 
-            // A single destination node that everything feeds into
             destinationNode = captureContext.createMediaStreamDestination();
-
-            // ScriptProcessor to capture PCM (deprecated but still reliable in Chromium)
             processorNode = captureContext.createScriptProcessor(BUFFER_SIZE, 1, 1);
             
             processorNode.onaudioprocess = (e) => {
                 if (!wsRef || wsRef.readyState !== WebSocket.OPEN) return;
                 const float32 = e.inputBuffer.getChannelData(0);
                 const pcm = new Int16Array(float32.length);
+                
+                // Peak detection for telemetry
+                let peak = 0;
                 for (let i = 0; i < float32.length; i++) {
-                    const clamped = Math.max(-1, Math.min(1, float32[i]));
+                    const s = float32[i];
+                    if (Math.abs(s) > peak) peak = Math.abs(s);
+                    const clamped = Math.max(-1, Math.min(1, s));
                     pcm[i] = clamped < 0 ? clamped * 0x8000 : clamped * 0x7FFF;
                 }
+                
                 wsRef.send(pcm.buffer);
             };
 
@@ -61,134 +69,106 @@
             
             return captureContext;
         } catch (err) {
-            console.error('[AudioCapture] Failed to create AudioContext:', err.message);
+            console.error('[AudioCapture] Failed to create CaptureContext:', err.message);
             return null;
         }
     }
 
-    // ── Helper: connect any AudioNode source to our capture graph ─────────────
-    function tapAudioNode(sourceNode, context) {
-        if (connectedSources.has(sourceNode)) return;
-        connectedSources.add(sourceNode);
+    // ── Bridging Logic ────────────────────────────────────────────────────────
+    function bridgeContext(ctx) {
+        if (!ctx || ctx === captureContext || bridgedNodes.has(ctx.destination)) return;
+        
         try {
-            // We need a gain node bridge because sourceNode may belong to a different
-            // AudioContext instance than captureContext.
-            // Instead, create a MediaStreamSource bridge.
-            const dest = context.createMediaStreamDestination();
-            sourceNode.connect(dest);
-
-            const ctx = getOrCreateCaptureContext();
-            const bridgeSource = ctx.createMediaStreamSource(dest.stream);
-            bridgeSource.connect(destinationNode);
-            console.log('[AudioCapture] Tapped AudioNode →', sourceNode.constructor.name);
+            console.log('[AudioCapture] Bridging AudioContext destination');
+            const captureCtx = getOrCreateCaptureContext();
+            
+            // Mirror the output of this context into our capture context
+            const dest = ctx.createMediaStreamDestination();
+            ctx.destination.connect(dest); // Note: This might not work on all sites if destination is already linked
+            
+            // Instead of connecting directly to destination (which might be occupied),
+            // we try to use MediaStreamSource to bridge.
+            const source = captureCtx.createMediaStreamSource(dest.stream);
+            source.connect(destinationNode);
+            
+            bridgedNodes.add(ctx.destination);
         } catch (err) {
-            console.warn('[AudioCapture] tapAudioNode failed:', err.message);
+            console.warn('[AudioCapture] Failed to bridge context:', err.message);
         }
     }
 
-    // ── Helper: connect a media element to our capture graph ──────────────────
-    function tapMediaElement(el) {
-        if (connectedSources.has(el)) return;
-        connectedSources.add(el);
-        try {
-            const ctx = getOrCreateCaptureContext();
-            const src = ctx.createMediaElementSource(el);
-            src.connect(destinationNode);
-            // Re-connect to default output so the page still plays audio locally
-            src.connect(ctx.destination);
-            console.log('[AudioCapture] Tapped <' + el.tagName.toLowerCase() + '>');
-        } catch (err) {
-            // createMediaElementSource throws if element already has a source node
-            // in another context — in that case we can't tap it, but that's OK.
-            console.warn('[AudioCapture] tapMediaElement failed:', err.message);
-        }
+    // ── Injection: AudioContext Hook ──────────────────────────────────────────
+    const OrigAudioContext = window.AudioContext || window.webkitAudioContext;
+    function HookedAudioContext(options) {
+        const ctx = new OrigAudioContext(options);
+        knownContexts.add(ctx);
+        console.log('[AudioCapture] New AudioContext detected');
+        
+        // Auto-bridge on next tick
+        setTimeout(() => bridgeContext(ctx), 100);
+        
+        return ctx;
     }
+    HookedAudioContext.prototype = OrigAudioContext.prototype;
+    window.AudioContext = window.webkitAudioContext = HookedAudioContext;
 
-    // ── Intercept HTMLMediaElement.play ───────────────────────────────────────
+    // ── Injection: MediaElement Hook ──────────────────────────────────────────
+    // Useful for sites that don't use Web Audio but just <video>/<audio>
     const origPlay = HTMLMediaElement.prototype.play;
-    HTMLMediaElement.prototype.play = function () {
-        // Tap on next tick so src/srcObject is set first
-        setTimeout(() => tapMediaElement(this), 0);
+    HTMLMediaElement.prototype.play = function() {
+        const el = this;
+        setTimeout(() => {
+            if (bridgedNodes.has(el)) return;
+            try {
+                const ctx = getOrCreateCaptureContext();
+                const source = ctx.createMediaElementSource(el);
+                source.connect(destinationNode);
+                source.connect(ctx.destination); // Keep local playback
+                bridgedNodes.add(el);
+                console.log('[AudioCapture] Tapped <' + el.tagName.toLowerCase() + '>');
+            } catch (err) {
+                // Already connected elsewhere? Manual bridging handled by AudioContext hook then
+            }
+        }, 0);
         return origPlay.apply(this, arguments);
     };
 
-    // ── Intercept AudioContext.createMediaElementSource ───────────────────────
-    // Some sites (YouTube) call this themselves — we need to not double-tap.
-    const origCreateMES = AudioContext.prototype.createMediaElementSource;
-    AudioContext.prototype.createMediaElementSource = function (el) {
-        const node = origCreateMES.apply(this, arguments);
-        // Mark as already tapped so tapMediaElement skips it
-        connectedSources.add(el);
-        // But still route output into our capture graph
-        setTimeout(() => {
-            try {
-                const ctx = getOrCreateCaptureContext();
-                const bridge = ctx.createMediaStreamSource(
-                    this.createMediaStreamDestination().stream
-                );
-                // Can't easily bridge here without the dest — just watch the node
-                tapAudioNode(node, this);
-            } catch (_) { }
-        }, 0);
-        return node;
-    };
-
-    // ── Scan existing media elements on DOM ready ─────────────────────────────
-    function scanExisting() {
-        document.querySelectorAll('audio, video').forEach(el => {
-            if (!el.paused || el.readyState >= 2) tapMediaElement(el);
-        });
-    }
-
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', scanExisting);
-    } else {
-        scanExisting();
-    }
-
-    // MutationObserver to catch dynamically added media elements
-    const mo = new MutationObserver(mutations => {
-        for (const m of mutations) {
-            for (const node of m.addedNodes) {
-                if (node.nodeType !== 1) continue;
-                if (node.tagName === 'VIDEO' || node.tagName === 'AUDIO') tapMediaElement(node);
-                node.querySelectorAll?.('audio, video').forEach(tapMediaElement);
+    // ── Resumption Heartbeat ──────────────────────────────────────────────────
+    // Browsers often suspend AudioContexts until a "user gesture" occurs.
+    // Since we have --autoplay-policy=no-user-gesture-required, we can 
+    // force them back to 'running'.
+    setInterval(() => {
+        for (const ctx of knownContexts) {
+            if (ctx.state === 'suspended') {
+                ctx.resume().catch(() => {});
             }
         }
-    });
-    mo.observe(document.documentElement, { childList: true, subtree: true });
+        if (captureContext && captureContext.state === 'suspended') {
+            captureContext.resume().catch(() => {});
+        }
+    }, 2000);
 
-    // ── Public init function called from server.js after page load ────────────
+    // ── Public Init ──────────────────────────────────────────────────────────
     window.initAudioCapture = async function (wsUrl, sessionId) {
         try {
-            if (wsRef && wsRef.readyState === WebSocket.OPEN) {
-                wsRef.close();
-            }
+            if (wsRef && wsRef.readyState === WebSocket.OPEN) wsRef.close();
 
-            // Include sessionId in URL query param so server knows which session
             const fullUrl = sessionId ? `${wsUrl}?audioSession=${sessionId}` : wsUrl;
             wsRef = new WebSocket(fullUrl);
             wsRef.binaryType = 'arraybuffer';
 
             wsRef.onopen = () => {
-                console.log('[AudioCapture] WS connected, sending audio handshake');
-                // Send a JSON handshake so server can register this WS as an audio channel
-                wsRef.send(JSON.stringify({
-                    type: 'audio-init',
-                    sessionId: sessionId,
-                }));
-                // Ensure capture context is running
+                console.log('[AudioCapture] WS Connected');
+                wsRef.send(JSON.stringify({ type: 'audio-init', sessionId }));
                 getOrCreateCaptureContext();
-                // Scan for any media that started before WS connected
-                scanExisting();
             };
 
-            wsRef.onclose = () => console.log('[AudioCapture] WS closed');
-            wsRef.onerror = (e) => console.warn('[AudioCapture] WS error');
+            wsRef.onclose = () => console.log('[AudioCapture] WS Closed');
+            wsRef.onerror = (e) => console.warn('[AudioCapture] WS Error');
         } catch (err) {
-            console.error('[AudioCapture] initAudioCapture failed:', err);
+            console.error('[AudioCapture] Init failed:', err);
         }
     };
 
-    console.log('[AudioCapture] Hooks installed');
+    console.log('[AudioCapture] Hooks Installed');
 })();

@@ -210,6 +210,9 @@ wss.on("connection", (ws, req) => {
     console.log(`[AudioWS] Browser audio stream connected for session ${audioSessionId}`);
     audioWsSessions.set(audioSessionId, ws);
 
+    let lastLogTime = 0;
+    let byteCount = 0;
+
     ws.on("message", (message) => {
       // Could be JSON handshake or binary PCM
       if (Buffer.isBuffer(message) && message[0] !== 0x7b) {
@@ -217,16 +220,30 @@ wss.on("connection", (ws, req) => {
         const session = getSession(audioSessionId);
         if (session?.webrtcStreamId) {
           const audioHandler = getAudioHandler(session.webrtcStreamId);
-          if (audioHandler) audioHandler.pushAudio(message);
+          if (audioHandler) {
+            audioHandler.pushAudio(message);
+            
+            // Telemetry: log every ~5s if audio is flowing
+            byteCount += message.length;
+            const now = Date.now();
+            if (now - lastLogTime > 5000) {
+              const kbps = ((byteCount * 8) / (now - lastLogTime)).toFixed(1);
+              console.log(`[AudioWS] Session ${audioSessionId} | Flowing @ ${kbps} kbps`);
+              byteCount = 0;
+              lastLogTime = now;
+            }
+          }
         }
         return;
       }
 
-      // JSON handshake — just log it
+      // JSON handshake
       try {
         const msg = JSON.parse(message.toString());
         if (msg.type === "audio-init") {
           console.log(`[AudioWS] Handshake received for session ${msg.sessionId}`);
+          // Ensure we update the mapping in case it connected before start-stream
+          audioWsSessions.set(msg.sessionId, ws);
         }
       } catch (_) { }
     });
