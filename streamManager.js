@@ -57,14 +57,20 @@ async function startWebRTCStream(page, offerSdp, options = {}) {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'stun:stun2.l.google.com:19302' },
-      { urls: 'stun:stun3.l.google.com:19302' },
-      { urls: 'stun:stun4.l.google.com:19302' },
-      { urls: 'stun:global.stun.twilio.com:3478' }, // Reliable fallback STUN
-      { urls: 'stun:stun.services.mozilla.com' }    // Reliable fallback STUN
+      // Add a free TURN server — or self-host coturn
+      {
+        urls: 'turn:openrelay.metered.ca:80',
+        username: 'openrelayproject',
+        credential: 'openrelayproject',
+      },
+      {
+        urls: 'turn:openrelay.metered.ca:443',
+        username: 'openrelayproject',
+        credential: 'openrelayproject',
+      },
     ],
-    // Improve connection reliability (especially critical for Windows)
     iceCandidatePoolSize: 10,
+    sdpSemantics: 'unified-plan',
   });
 
   // Video track setup
@@ -100,7 +106,7 @@ async function startWebRTCStream(page, offerSdp, options = {}) {
     setTimeout(() => {
       peerConnection.removeEventListener('icegatheringstatechange', checkState);
       resolve();
-    }, 4000); // Increased from 1500ms
+    }, 8000); // Increased from 1500ms
   });
 
   const finalAnswerSdp = peerConnection.localDescription.sdp;

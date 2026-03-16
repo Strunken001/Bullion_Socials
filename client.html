@@ -479,7 +479,7 @@
 
   <script>
     // ─── Config ──────────────────────────────────────────────────────────────
-    const SERVER_URL = "http://localhost:3000"; // 'http://185.181.8.32:3000'; //
+    const SERVER_URL = 'http://185.181.8.32:3000'; // "http://localhost:3000"; // 
 
     // Server's logical viewport (must match server.js defaults)
     const SERVER_W = 390;
@@ -605,10 +605,19 @@
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
           { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' },
+          // Add a free TURN server — or self-host coturn
+          {
+            urls: 'turn:openrelay.metered.ca:80',
+            username: 'openrelayproject',
+            credential: 'openrelayproject',
+          },
+          {
+            urls: 'turn:openrelay.metered.ca:443',
+            username: 'openrelayproject',
+            credential: 'openrelayproject',
+          },
         ],
         iceCandidatePoolSize: 10,
-        // Prefer low-latency for screen-share use case
         sdpSemantics: 'unified-plan',
       });
 
