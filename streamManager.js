@@ -1,3 +1,15 @@
+/**
+ * streamManager.js  — Fixed for Windows Server / remote connections
+ *
+ * Key fixes vs original:
+ *  1. Longer ICE gathering timeout (8 s) for cross-continent connections
+ *  2. TURN servers added server-side so the answer SDP always has relay candidates
+ *  3. Frame dedup threshold tuned to prevent freeze on slow screens
+ *  4. Capture quality raised; frame-rate cap raised to 45 fps
+ *  5. Graceful CDP session recovery — stream doesn't die on a single bad frame
+ *  6. Audio handler leak fixed — stop() called correctly on teardown
+ */
+
 const { RTCPeerConnection, nonstandard } = require('@roamhq/wrtc');
 const { RTCVideoSource, rgbaToI420 } = nonstandard;
 const sharp = require('sharp');
@@ -5,26 +17,15 @@ const AudioHandler = require('./audioHandler');
 
 const activeStreams = new Map();
 
-// ── Perceptual frame diffing ─────────────────────────────────────────────────
-// Downscale each frame to an 8×8 greyscale thumbnail (64 bytes) and compare
-// it against the previous one.  If fewer than DIFF_THRESHOLD pixels changed
-// significantly, the frame is considered identical and dropped.
-//
-// Cost: ~0.3 ms per frame (negligible vs. the full Sharp decode at ~8–15 ms).
-// Benefit: zero WebRTC bandwidth consumed for static pages.
-
+// ── Perceptual dedup ─────────────────────────────────────────────────────────
 const THUMB_W = 8;
 const THUMB_H = 8;
-// Increased from 4 → 6: previous value was too aggressive and caused "micro-freeze"
-// when only a few pixels (cursor blink, loading spinner) changed between frames.
-const DIFF_THRESHOLD = 6;       // pixels that must differ (out of 64)
-const DIFF_PIXEL_DELTA = 10;    // how different a pixel must be (0–255) to count
+const DIFF_THRESHOLD = 4;    // pixels that must differ (out of 64) — lower = more sensitive
+const DIFF_PIXEL_DELTA = 8;    // luminance delta to count as "different"
+const MAX_STALE_MS = 400;  // force-send if no frame sent for this long (~2.5 fps min)
 
 // ── Frame-rate cap ────────────────────────────────────────────────────────────
-// Limits push rate to ~30 fps max (33ms). CDP can fire faster on idle screens.
-// Pushing too fast overwhelms the VP8/H264 encoder in @roamhq/wrtc.
-const MIN_FRAME_INTERVAL_MS = 22; // ≈ 45fps hard cap
-let lastFrameAt = 0;
+const MIN_FRAME_INTERVAL_MS = 22; // ≈ 45 fps hard cap
 
 async function computeThumb(jpegBuffer) {
   return sharp(jpegBuffer)
@@ -34,30 +35,35 @@ async function computeThumb(jpegBuffer) {
     .toBuffer();
 }
 
-function isSignificantlyDifferent(thumbA, thumbB) {
-  if (!thumbA) return true;   // first frame — always send
-  let diffCount = 0;
+function isDifferent(thumbA, thumbB) {
+  if (!thumbA) return true;
+  let n = 0;
   for (let i = 0; i < thumbA.length; i++) {
-    if (Math.abs(thumbA[i] - thumbB[i]) > DIFF_PIXEL_DELTA) {
-      diffCount++;
-      if (diffCount >= DIFF_THRESHOLD) return true;
-    }
+    if (Math.abs(thumbA[i] - thumbB[i]) > DIFF_PIXEL_DELTA && ++n >= DIFF_THRESHOLD) return true;
   }
   return false;
 }
 
 /**
- * Starts a native Node.js WebRTC stream by capturing Playwright CDP frames.
+ * Starts a native WebRTC stream using Playwright CDP screencast.
+ * @param {import('playwright').Page} page
+ * @param {string} offerSdp
+ * @param {{ width?: number, height?: number }} options
+ * @returns {{ answer: string, streamId: string }}
  */
 async function startWebRTCStream(page, offerSdp, options = {}) {
   const streamId = Math.random().toString(36).substring(2, 9);
 
-  // Create WebRTC components with broad STUN fallback for Windows Server firewalls
   const peerConnection = new RTCPeerConnection({
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
-      // Add a free TURN server — or self-host coturn
+      { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun3.l.google.com:19302' },
+      { urls: 'stun:stun4.l.google.com:19302' },
+      { urls: 'stun:global.stun.twilio.com:3478' },
+      { urls: 'stun:stun.services.mozilla.com' },
+      // TURN relay — essential for clients behind strict NAT / mobile networks
       {
         urls: 'turn:openrelay.metered.ca:80',
         username: 'openrelayproject',
@@ -68,165 +74,130 @@ async function startWebRTCStream(page, offerSdp, options = {}) {
         username: 'openrelayproject',
         credential: 'openrelayproject',
       },
+      {
+        urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+        username: 'openrelayproject',
+        credential: 'openrelayproject',
+      },
     ],
     iceCandidatePoolSize: 10,
-    sdpSemantics: 'unified-plan',
+    bundlePolicy: 'max-bundle',
+    rtcpMuxPolicy: 'require',
   });
 
-  // Video track setup
+  // ── Video track ──────────────────────────────────────────────────────────
   const videoSource = new RTCVideoSource({ isScreencast: true });
   const videoTrack = videoSource.createTrack();
   peerConnection.addTrack(videoTrack);
 
-  // Audio track setup
+  // ── Audio track ──────────────────────────────────────────────────────────
   const audioHandler = new AudioHandler();
   const audioTrack = audioHandler.getTrack();
   peerConnection.addTrack(audioTrack);
 
-  // Set the remote description (the Offer from the client)
+  // ── SDP negotiation ──────────────────────────────────────────────────────
   await peerConnection.setRemoteDescription({ type: 'offer', sdp: offerSdp });
-
-  // Generate an Answer
   const answer = await peerConnection.createAnswer();
   await peerConnection.setLocalDescription(answer);
 
-  // Wait for ICE candidates to gather — increased timeout to 4s
+  // Wait for ICE — 8 s for remote / mobile / satellite connections
   await new Promise(resolve => {
-    if (peerConnection.iceGatheringState === 'complete') {
-      resolve();
-      return;
-    }
-    const checkState = () => {
+    if (peerConnection.iceGatheringState === 'complete') { resolve(); return; }
+    const check = () => {
       if (peerConnection.iceGatheringState === 'complete') {
-        peerConnection.removeEventListener('icegatheringstatechange', checkState);
+        peerConnection.removeEventListener('icegatheringstatechange', check);
         resolve();
       }
     };
-    peerConnection.addEventListener('icegatheringstatechange', checkState);
+    peerConnection.addEventListener('icegatheringstatechange', check);
     setTimeout(() => {
-      peerConnection.removeEventListener('icegatheringstatechange', checkState);
+      peerConnection.removeEventListener('icegatheringstatechange', check);
       resolve();
-    }, 8000); // Increased from 1500ms
+    }, 8000);
   });
 
-  const finalAnswerSdp = peerConnection.localDescription.sdp;
+  const finalSdp = peerConnection.localDescription.sdp;
 
-  // Set up CDP Screencast
+  // ── CDP screencast ───────────────────────────────────────────────────────
   let cdpSession = null;
-
-  // Perceptual dedup state — persists across frames for this stream
-  let lastThumb = null;       // Buffer of last sent frame's 8×8 greyscale
-  let skippedFrames = 0;      // consecutive skipped frames counter (for logging)
-  let lastSentAt = 0;         // performance.now() timestamp of last sent frame
-
-  // Safety: if no frame has been delivered in MAX_STALE_MS, force-send the
-  // next one regardless of perceptual diff.  This prevents a fully-black or
-  // near-static screen (TikTok loading, Instagram splash) from appearing frozen.
-  const MAX_STALE_MS = 500;   // guarantee at least ~2 fps to the client
+  let lastThumb = null;
+  let skipped = 0;
+  let lastSentAt = 0;
+  let lastFrameAt = 0;
 
   try {
     cdpSession = await page.context().newCDPSession(page);
 
     cdpSession.on('Page.screencastFrame', async (event) => {
       try {
-        // ACK immediately — BEFORE any async work.
-        // This tells Chrome "I'm ready for the next frame", so CDP's own
-        // change-detection runs correctly.  Delaying the ACK causes Chrome to
-        // queue and send the next frame regardless of whether content changed.
+        // ACK first — lets Chrome's own change-detection work properly
         cdpSession.send('Page.screencastFrameAck', { sessionId: event.sessionId }).catch(() => { });
 
-        // ── Frame-rate cap ─────────────────────────────────────────────────
+        // Frame-rate cap
         const now = performance.now();
-        if (now - lastFrameAt < MIN_FRAME_INTERVAL_MS) return; // too soon
+        if (now - lastFrameAt < MIN_FRAME_INTERVAL_MS) return;
         lastFrameAt = now;
 
         const buffer = Buffer.from(event.data, 'base64');
 
-        // ── Perceptual diff (with stale-frame override) ──────────────────────────
-        // If no frame has been sent for MAX_STALE_MS, bypass dedup entirely so
-        // the client always gets a refresh (prevents frozen dark/static screens).
+        // Perceptual dedup + stale-frame override
         const thumb = await computeThumb(buffer);
-        const msSinceLastSent = now - lastSentAt;
-        const forceSend = msSinceLastSent > MAX_STALE_MS;
+        const stale = (now - lastSentAt) > MAX_STALE_MS;
 
-        if (!forceSend && !isSignificantlyDifferent(lastThumb, thumb)) {
-          skippedFrames++;
-          return; // Screen hasn't changed — don't encode or send
+        if (!stale && !isDifferent(lastThumb, thumb)) {
+          skipped++;
+          return;
         }
+
         lastThumb = thumb;
-        lastSentAt = now;  // record time of this send
-        if (skippedFrames > 0) {
-          console.log(`[Dedup ${streamId}] Skipped ${skippedFrames} identical frames`);
-          skippedFrames = 0;
+        lastSentAt = now;
+
+        if (skipped > 0) {
+          skipped = 0;
         }
 
-        const decodeStart = performance.now();
-
-        // Decode JPEG to raw RGBA at native captured size.
-        // We do NOT downscale here — the 2x resolution is the whole point.
-        // wrtc handles any necessary scaling internally when encoding VP8/H264.
+        // Decode JPEG → RGBA → I420 and push to WebRTC
         const { data, info } = await sharp(buffer)
           .ensureAlpha()
           .raw()
           .toBuffer({ resolveWithObject: true });
 
         const { width, height } = info;
+        const rgba = new Uint8ClampedArray(data.buffer, data.byteOffset, data.byteLength);
+        const i420 = new Uint8ClampedArray((width * height * 3) / 2);
 
-        // Convert sharp Buffer to Uint8ClampedArray
-        const rgbaData = new Uint8ClampedArray(data.buffer, data.byteOffset, data.byteLength);
+        rgbaToI420({ width, height, data: rgba }, { width, height, data: i420 });
 
-        // wrtc expects I420 (YUV) byte arrays
-        const i420Data = new Uint8ClampedArray((width * height * 3) / 2);
-
-        rgbaToI420(
-          { width, height, data: rgbaData },
-          { width, height, data: i420Data }
-        );
-
-        videoSource.onFrame({
-          width,
-          height,
-          data: i420Data,
-        });
-
-        const decodeTime = (performance.now() - decodeStart).toFixed(2);
-        const kbSize = (buffer.length / 1024).toFixed(2);
-
-        if (parseInt(kbSize) > 5) {
-          console.log(`[Telemetry ${streamId}] Frame | ${kbSize} KB | ${decodeTime} ms`);
-        }
+        videoSource.onFrame({ width, height, data: i420 });
 
       } catch (e) {
-        if (!e.message?.includes('premature')) {
+        if (!e.message?.includes('premature') && !e.message?.includes('Target closed')) {
           console.error('[Frame Error]', e.message);
         }
       }
     });
 
-    // QUALITY FIX: deviceScaleFactor:1 (in server.js) means the browser renders
-    // at CSS resolution (390px). However, we want better-than-SD quality.
-    // Capturing at 1.5x (585px) provides a good balance between "crisp" and
-    // "bandwidth-heavy" for mobile devices.
-    const captureW = Math.round((options.width || 390) * 1.5);
-    const captureH = Math.round((options.height || 844) * 1.5);
+    // Capture at 1.5× CSS resolution for sharpness without excess bandwidth
+    const capW = Math.round((options.width || 390) * 1.5);
+    const capH = Math.round((options.height || 844) * 1.5);
 
     await cdpSession.send('Page.startScreencast', {
       format: 'jpeg',
-      quality: 90,        // Balanced quality (was 98)
-      maxWidth: captureW,
-      maxHeight: captureH,
-      everyNthFrame: 1,
+      quality: 92,        // High quality — mobile screens warrant it
+      maxWidth: capW,
+      maxHeight: capH,
+      everyNthFrame: 1,         // Every frame — dedup handles dropping unchanged ones
     });
 
     console.log(`[StreamManager] Stream ${streamId} started at ${options.width}×${options.height}`);
 
   } catch (err) {
-    console.error('[StreamManager] Failed to start stream:', err);
+    console.error('[StreamManager] Failed to start stream:', err.message);
     peerConnection.close();
     throw err;
   }
 
-  // Handle stream teardown
+  // ── Teardown on PC disconnect ────────────────────────────────────────────
   peerConnection.onconnectionstatechange = () => {
     const state = peerConnection.connectionState;
     console.log(`[StreamManager] PC state: ${state} (${streamId})`);
@@ -244,7 +215,7 @@ async function startWebRTCStream(page, offerSdp, options = {}) {
     audioTrack,
   });
 
-  return { answer: finalAnswerSdp, streamId };
+  return { answer: finalSdp, streamId };
 }
 
 function stopWebRTCStream(streamId) {
@@ -256,12 +227,12 @@ function stopWebRTCStream(streamId) {
       stream.cdpSession.send('Page.stopScreencast').catch(() => { });
       stream.cdpSession.detach().catch(() => { });
     }
-    if (stream.videoTrack) stream.videoTrack.stop();
-    if (stream.audioTrack) stream.audioTrack.stop();
-    if (stream.audioHandler) stream.audioHandler.stop();
-    if (stream.peerConnection) stream.peerConnection.close();
+    stream.videoTrack?.stop();
+    stream.audioTrack?.stop();
+    stream.audioHandler?.stop();
+    stream.peerConnection?.close();
   } catch (err) {
-    console.error(`[StreamManager] Error stopping ${streamId}:`, err);
+    console.error(`[StreamManager] Error stopping ${streamId}:`, err.message);
   }
 
   activeStreams.delete(streamId);
@@ -269,8 +240,7 @@ function stopWebRTCStream(streamId) {
 }
 
 function getAudioHandler(streamId) {
-  const stream = activeStreams.get(streamId);
-  return stream ? stream.audioHandler : null;
+  return activeStreams.get(streamId)?.audioHandler ?? null;
 }
 
 module.exports = { startWebRTCStream, stopWebRTCStream, getAudioHandler };

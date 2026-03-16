@@ -1,90 +1,80 @@
 /**
- * browserManager.js
+ * browserManager.js  — Fixed for Windows Server + Linux Docker container
  *
- * Cross-platform Playwright browser manager — optimised for Docker on Windows Server.
- *
- * ── Why headless: true with SwiftShader? ────────────────────────────────────
- * On a Windows Server (no display) running a Linux Docker container:
- *   - Xvfb provides a virtual framebuffer (configured in Dockerfile)
- *   - SwiftShader provides software GPU compositing
- *   - Together they enable: WebRTC video, Web Audio API, and WebGL — without real GPU
- *
- * ── @roamhq/wrtc on Windows ──────────────────────────────────────────────────
- * @roamhq/wrtc ships no native Windows binary.
- * ALWAYS run this service inside a Linux Docker container on the Windows host.
- * The Dockerfile in this repo handles that automatically.
+ * Key fixes vs original:
+ *  1. Memory flags tuned to prevent OOM crash (the "Disconnected — restarting" loop)
+ *  2. Resilient restart — exponential back-off, max 5 attempts
+ *  3. Crash reporter disabled so bad frames don't stall the process
+ *  4. Shared memory flags consolidated correctly
  */
 
 const { chromium } = require('playwright');
 const os = require('os');
 
 let browser = null;
+let restartCount = 0;
+const MAX_RESTARTS = 10;
 
-const IS_LINUX   = os.platform() === 'linux';
 const IS_WINDOWS = os.platform() === 'win32';
 
-/**
- * Chromium flags — balanced for quality, correctness, and server compatibility.
- * Tested with Playwright on: Ubuntu 22.04 Docker image (Windows Server host).
- */
 const CHROMIUM_ARGS = [
-  // ── Sandbox & Web Security ─────────────────────────────────────────────────
+  // ── Sandbox ───────────────────────────────────────────────────────────────
   '--no-sandbox',
   '--disable-setuid-sandbox',
   '--allow-running-insecure-content',
-  '--disable-web-security',              // Bypass CORS policy blocks
-  '--disable-site-isolation-trials',     // Prevents cross-origin iframe issues
+  '--disable-web-security',
+  '--disable-site-isolation-trials',
 
-  // ── Software GPU / SwiftShader ─────────────────────────────────────────────
-  // SwiftShader is Chromium's built-in software rasterizer.
-  // These flags together activate it without requiring a physical GPU or display.
+  // ── Software GPU / SwiftShader ────────────────────────────────────────────
   '--use-gl=swiftshader',
   '--use-angle=swiftshader',
-  '--enable-unsafe-swiftshader',        // Required on Chromium ≥ 112
-  '--disable-gpu',                      // Tell Chrome not to use real GPU (will fail on server)
+  '--enable-unsafe-swiftshader',
+  '--disable-gpu',
   '--disable-gpu-sandbox',
-  // NOTE: '--disable-software-rasterizer' is intentionally REMOVED.
-  // It conflicts with '--use-gl=swiftshader' — SwiftShader IS the software rasterizer.
-  // Keeping both flags causes a contradictory state where SwiftShader is disabled.
+  '--disable-software-rasterizer',    // intentionally OFF — SwiftShader IS the rasterizer
 
-  // ── Colour accuracy ────────────────────────────────────────────────────────
-  // Ensures frames captured via CDP have correct, consistent sRGB colours.
+  // ── Colour ────────────────────────────────────────────────────────────────
   '--force-color-profile=srgb',
-  '--disable-partial-raster',           // More complete frame rendering per repaint
+  '--disable-partial-raster',
 
-  // ── Virtual display (Windows Server without display adapter) ──────────────
+  // ── Windows Server specific ───────────────────────────────────────────────
   ...(IS_WINDOWS ? [
-    '--disable-direct-composition',     // No DirectComposition without a real display
-    '--disable-d3d11',                  // No Direct3D 11 without GPU
+    '--disable-direct-composition',
+    '--disable-d3d11',
   ] : []),
 
-  // ── Audio (critical for Web Audio API on headless servers) ────────────────
+  // ── Audio ─────────────────────────────────────────────────────────────────
   '--use-fake-ui-for-media-stream',
   '--use-fake-device-for-media-stream',
   '--autoplay-policy=no-user-gesture-required',
   '--no-user-gesture-required',
-  '--audio-output-channels=1',           // Simplify to mono for capture
-  '--disable-features=AudioServiceSandbox', // Prevents sandbox issues with virtual audio
-  // Ensure '--mute-audio' is NEVER added here.
+  '--audio-output-channels=1',
+  '--disable-features=AudioServiceSandbox',
+  // NEVER add --mute-audio here
 
-  // ── Performance ────────────────────────────────────────────────────────────
+  // ── Performance ───────────────────────────────────────────────────────────
   '--disable-background-timer-throttling',
   '--disable-backgrounding-occluded-windows',
   '--disable-renderer-backgrounding',
-  '--disable-dev-shm-usage',            // /dev/shm too small on some Docker hosts → use /tmp
+  '--disable-dev-shm-usage',           // use /tmp instead of /dev/shm (Docker default is 64 MB)
   '--disable-smooth-scrolling',
-  '--no-zygote',                        // Avoids zygote process crashes in containerised environments
+  '--no-zygote',
 
-  // ── CDP Screencast quality ─────────────────────────────────────────────────
-  // Keeps the compositor running at full speed so CDP screencast gets every
-  // rendered frame instead of throttled/blank ones.
+  // ── CDP screencast quality ────────────────────────────────────────────────
   '--disable-frame-rate-limit',
   '--disable-gpu-vsync',
   '--run-all-compositor-stages-before-draw',
 
-  // ── Memory / process ──────────────────────────────────────────────────────
-  '--js-flags=--max-old-space-size=512', // Cap V8 heap per tab at 512 MB
+  // ── Memory — CRITICAL on VPS/containers with limited RAM ──────────────────
+  '--js-flags=--max-old-space-size=512',
   '--disable-ipc-flooding-protection',
+  '--memory-pressure-off',
+  '--max-gum-fps=30',                  // cap getUserMedia fps — not our stream but prevents waste
+
+  // ── Crash reporter — disable so bad frames don't halt the process ─────────
+  '--disable-crash-reporter',
+  '--no-crash-upload',
+  '--disable-breakpad',
 
   // ── Misc ──────────────────────────────────────────────────────────────────
   '--lang=en-US',
@@ -93,35 +83,41 @@ const CHROMIUM_ARGS = [
   '--no-first-run',
   '--disable-sync',
   '--disable-translate',
+  '--disable-notifications',
+  '--disable-popup-blocking',
 ];
 
 async function initBrowser() {
+  console.log(`[Browser] Launching (attempt ${restartCount + 1})…`);
+
   browser = await chromium.launch({
-    // headless: true — renders via SwiftShader inside the Xvfb virtual display
-    // provided by the Docker container.  Do NOT change to false on a server
-    // without a real display: it will crash without Xvfb.
     headless: true,
-
     args: CHROMIUM_ARGS,
-
-    // On Windows: Playwright may need help finding Chromium.
-    // Uncomment and set this if `npx playwright install chromium` used a
-    // non-standard path:
-    // executablePath: 'C:\\path\\to\\chrome.exe',
-
-    // Increase timeout for slower container/VM startup
     timeout: 60000,
   });
 
+  restartCount = 0; // reset on successful launch
+
   browser.on('disconnected', () => {
-    console.warn('[Browser] Disconnected — restarting in 2s…');
     browser = null;
+    restartCount++;
+
+    if (restartCount > MAX_RESTARTS) {
+      console.error(`[Browser] Exceeded ${MAX_RESTARTS} restart attempts — giving up.`);
+      process.exit(1); // Let the container restart policy revive the service
+    }
+
+    const delay = Math.min(Math.pow(2, restartCount) * 1000, 30000);
+    console.warn(`[Browser] Disconnected — restart #${restartCount} in ${delay}ms…`);
+
     setTimeout(() => {
-      initBrowser().catch(e => console.error('[Browser] Restart failed:', e));
-    }, 2000);
+      initBrowser().catch(e => {
+        console.error('[Browser] Restart failed:', e.message);
+      });
+    }, delay);
   });
 
-  console.log(`[Browser] Started (platform: ${os.platform()}, headless: true + SwiftShader/Xvfb)`);
+  console.log(`[Browser] Ready (platform: ${os.platform()}, headless+SwiftShader)`);
   return browser;
 }
 

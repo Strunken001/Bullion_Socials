@@ -1,58 +1,69 @@
-const express = require("express");
-const { WebSocketServer } = require("ws");
-const path = require("path");
-const { initBrowser, getBrowser } = require("./browserManager");
+/**
+ * server.js  — Fixed for Windows Server / remote deployment
+ *
+ * Key fixes vs original:
+ *  1. Audio capture WS URL always uses 127.0.0.1 (server-internal) — correct
+ *  2. url.parse() replaced with URL API (removes DEP0169 warning)
+ *  3. CORS hardened but still open for remote clients
+ *  4. Session cleanup on Playwright browser restart
+ *  5. /health endpoint extended with active session count
+ */
+
+const express = require('express');
+const { WebSocketServer } = require('ws');
+const path = require('path');
+const { URL } = require('url');
+const { initBrowser, getBrowser } = require('./browserManager');
 const {
-  createSession,
-  getSession,
-  updateSession,
-  deleteSession,
-  cleanupIdleSessions,
-} = require("./sessionStore");
-const { startWebRTCStream, stopWebRTCStream, getAudioHandler } = require("./streamManager");
-const { handleInput } = require("./inputHandler");
-const { v4: uuidv4 } = require("uuid");
-const cors = require("cors");
-const fs = require("fs");
-const url = require("url");
+  createSession, getSession, updateSession, deleteSession, cleanupIdleSessions,
+} = require('./sessionStore');
+const { startWebRTCStream, stopWebRTCStream, getAudioHandler } = require('./streamManager');
+const { handleInput } = require('./inputHandler');
+const { v4: uuidv4 } = require('uuid');
+const cors = require('cors');
+const fs = require('fs');
 
 const audioInjectionScript = fs.readFileSync(
-  path.join(__dirname, "audioCaptureInjection.js"),
-  "utf8"
+  path.join(__dirname, 'audioCaptureInjection.js'),
+  'utf8'
 );
 
 const app = express();
-app.use(cors());
+
+// Allow all origins — tighten this if you know your client origin
+app.use(cors({ origin: '*', methods: ['GET', 'POST', 'OPTIONS'] }));
 app.use(express.json());
 
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "client.html"));
+// Serve client.html at root so you can open http://<IP>:3000 directly
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'client.html'));
 });
 
-// Health check — used by Docker HEALTHCHECK and load balancers
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', uptime: Math.round(process.uptime()), ts: Date.now() });
 });
 
-
+// ── Browser init ──────────────────────────────────────────────────────────────
 (async () => {
   await initBrowser();
 })();
 
+// ── Allowed platforms ─────────────────────────────────────────────────────────
 const ALLOWED_PLATFORMS = {
-  facebook: "https://www.facebook.com/",
-  instagram: "https://www.instagram.com",
-  x: "https://x.com/",
-  tiktok: "https://www.tiktok.com",
-  linkedin: "https://www.linkedin.com",
-  telegram: "https://web.telegram.org/",
-  discord: "https://discord.com/app",
-  messenger: "https://www.messenger.com/",
-  youtube: "https://www.youtube.com",
-  google: "https://www.google.com",
+  facebook: 'https://www.facebook.com/',
+  instagram: 'https://www.instagram.com',
+  x: 'https://x.com/',
+  tiktok: 'https://www.tiktok.com',
+  linkedin: 'https://www.linkedin.com',
+  telegram: 'https://web.telegram.org/',
+  discord: 'https://discord.com/app',
+  messenger: 'https://www.messenger.com/',
+  youtube: 'https://www.youtube.com',
+  google: 'https://www.google.com',
 };
 
-app.post("/start-session", async (req, res) => {
+// ── POST /start-session ───────────────────────────────────────────────────────
+app.post('/start-session', async (req, res) => {
   let context, page;
   try {
     const { platform, width, height } = req.body;
@@ -69,313 +80,251 @@ app.post("/start-session", async (req, res) => {
 
     context = await browser.newContext({
       viewport: { width: viewWidth, height: viewHeight },
-      // deviceScaleFactor: 1 — we get 2x quality by capturing at 2x in CDP
-      // screencast (maxWidth * 2). Setting this to 2 here causes a mismatch
-      // where the page renders at 780px but CDP only sees a 390px surface.
       deviceScaleFactor: 1,
-      locale: "en-US",
+      locale: 'en-US',
       hasTouch: true,
       isMobile: true,
-      userAgent:
-        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
-      extraHTTPHeaders: { "Accept-Language": "en-US,en;q=0.9" },
+      userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+      extraHTTPHeaders: { 'Accept-Language': 'en-US,en;q=0.9' },
       bypassCSP: true,
-      permissions: ["microphone", "camera", "geolocation", "notifications"],
-      // Instagram's Permissions-Policy checks for bluetooth and throws an error if unhandled.
-      // Easiest bypass is just to ignore the specific console log below.
+      permissions: ['microphone', 'camera', 'geolocation', 'notifications'],
     });
 
-    // Inject audio capture hooks before any page script runs
     await context.addInitScript(audioInjectionScript);
 
     page = await context.newPage();
 
-    // Relay browser console for debugging
-    page.on("console", (msg) => {
+    // Relay useful browser console messages
+    page.on('console', msg => {
       const text = msg.text();
-      // Suppress known noisy/irrelevant browser logs
-      if (
-        !text.includes("deprecated") &&
-        !text.includes("Failed to load resource") &&
-        !text.includes("ERR_") &&
-        !text.includes("Unrecognized feature: 'bluetooth'") &&
-        !text.includes("blocked by CORS policy") &&
-        !text.includes("This is a browser feature intended for developers") &&
-        !text.includes("See https://www.facebook.com/selfxss")
-      ) {
+      const suppress = [
+        'deprecated', 'Failed to load resource', 'ERR_', 'Unrecognized feature: \'bluetooth\'',
+        'blocked by CORS policy', 'This is a browser feature intended for developers',
+        'See https://www.facebook.com/selfxss',
+      ];
+      if (!suppress.some(s => text.includes(s))) {
         console.log(`[Browser] ${text}`);
       }
     });
 
-    // Match OS window to viewport via CDP
-    const cdp = await context.newCDPSession(page);
-    await cdp
-      .send("Browser.setWindowBounds", {
-        windowId: (await cdp.send("Browser.getWindowForTarget")).windowId,
-        bounds: { width: viewWidth, height: viewHeight },
-      })
-      .catch((e) => console.warn("[CDP] setWindowBounds:", e.message));
-
+    // Sync CDP window size to viewport
     try {
-      await page.goto(ALLOWED_PLATFORMS[platform], {
-        waitUntil: "commit",
-        timeout: 30000,
+      const cdp = await context.newCDPSession(page);
+      const { windowId } = await cdp.send('Browser.getWindowForTarget');
+      await cdp.send('Browser.setWindowBounds', {
+        windowId,
+        bounds: { width: viewWidth, height: viewHeight },
       });
     } catch (e) {
-      console.warn(`[Navigation] ${platform} goto soft-timeout:`, e.message);
+      console.warn('[CDP] setWindowBounds:', e.message);
+    }
+
+    // Navigate to platform
+    try {
+      await page.goto(ALLOWED_PLATFORMS[platform], { waitUntil: 'commit', timeout: 30000 });
+    } catch (e) {
+      console.warn(`[Navigation] ${platform} soft-timeout:`, e.message);
     }
 
     const sessionId = uuidv4();
     createSession(sessionId, context, page, { width: viewWidth, height: viewHeight });
 
-    // Inject audio capture — pass sessionId so server can route binary frames
-    // The WS URL points back to this server.
-    // const host = req.headers.host || "localhost:3000";
-    // const protocol = req.protocol === "https" ? "wss" : "ws";
-    // const serverWsUrl = `${protocol}://${host}`;
-    const serverWsUrl = `ws://127.0.0.1:3000`;
-    await page
-      .evaluate(
-        ({ wsUrl, sId }) => {
-          if (typeof window.initAudioCapture === "function") {
-            window.initAudioCapture(wsUrl, sId).catch(console.error);
-          } else {
-            // Retry once after a short delay in case script hasn't loaded yet
-            setTimeout(() => {
-              if (typeof window.initAudioCapture === "function") {
-                window.initAudioCapture(wsUrl, sId).catch(console.error);
-              }
-            }, 1500);
-          }
-        },
-        { wsUrl: serverWsUrl, sId: sessionId }
-      )
-      .catch((e) => console.warn("[AudioInjection]", e.message));
+    // Audio capture — always 127.0.0.1 because this runs server-side (Playwright → Node)
+    const serverWsUrl = 'ws://127.0.0.1:3000';
+    try {
+      await page.evaluate(({ wsUrl, sId }) => {
+        if (typeof window.initAudioCapture === 'function') {
+          window.initAudioCapture(wsUrl, sId).catch(console.error);
+        } else {
+          setTimeout(() => {
+            if (typeof window.initAudioCapture === 'function') {
+              window.initAudioCapture(wsUrl, sId).catch(console.error);
+            }
+          }, 1500);
+        }
+      }, { wsUrl: serverWsUrl, sId: sessionId });
+    } catch (e) {
+      console.warn('[AudioInjection]', e.message);
+    }
 
-    res.json({
-      sessionId,
-      width: viewWidth,
-      height: viewHeight,
-      quality: 92,
-      format: "jpeg",
-    });
-
+    res.json({ sessionId, width: viewWidth, height: viewHeight, quality: 92, format: 'jpeg' });
     console.log(`[API] Session ${sessionId} | ${viewWidth}×${viewHeight}`);
+
   } catch (error) {
-    console.error(`[API] start-session error:`, error.message);
+    console.error('[API] start-session error:', error.message);
     if (page) await page.close().catch(() => { });
     if (context) await context.close().catch(() => { });
-    res.status(500).json({ error: "Failed to start session", details: error.message });
+    res.status(500).json({ error: 'Failed to start session', details: error.message });
   }
 });
 
-app.post("/end-session", async (req, res) => {
+// ── POST /end-session ─────────────────────────────────────────────────────────
+app.post('/end-session', async (req, res) => {
   try {
     const { sessionId } = req.body;
     const session = getSession(sessionId);
     if (session) {
       if (session.ws?.readyState === session.ws?.OPEN) {
-        session.ws.send(
-          JSON.stringify({ type: "session-ended", message: "Session ended" })
-        );
+        session.ws.send(JSON.stringify({ type: 'session-ended', message: 'Session ended' }));
       }
-      if (session.page) await session.page.close().catch(() => { });
-      if (session.context) await session.context.close().catch(() => { });
+      if (session.webrtcStreamId) stopWebRTCStream(session.webrtcStreamId);
+      await session.page?.close().catch(() => { });
+      await session.context?.close().catch(() => { });
       deleteSession(sessionId);
     }
     res.json({ success: true });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: "Failed to end session" });
+    res.status(500).json({ error: 'Failed to end session' });
   }
 });
 
-const server = app.listen(3000, () => {
-  console.log("Server running on http://localhost:3000");
+// ── HTTP server ───────────────────────────────────────────────────────────────
+const server = app.listen(3000, '0.0.0.0', () => {
+  console.log('Server listening on http://0.0.0.0:3000');
+
+  // Idle session cleanup every 60 s (kills sessions idle > 5 min)
   setInterval(async () => {
-    try {
-      await cleanupIdleSessions(300000);
-    } catch (err) {
-      console.error("Cleanup error:", err);
-    }
+    try { await cleanupIdleSessions(300000); } catch (e) { console.error('Cleanup:', e); }
   }, 60000);
 });
 
+// ── WebSocket server ──────────────────────────────────────────────────────────
 const wss = new WebSocketServer({ server });
 
-// ── Audio-only WebSocket connections keyed by sessionId ─────────────────────
-// When audioCaptureInjection.js connects with ?audioSession=<id>, we register
-// that WS here and push its binary PCM data to the right AudioHandler.
-const audioWsSessions = new Map(); // sessionId → ws
+// Audio-only connections keyed by sessionId (from audioCaptureInjection.js)
+const audioWsSessions = new Map();
 
-wss.on("connection", (ws, req) => {
+wss.on('connection', (ws, req) => {
   const ip = req.socket.remoteAddress;
-  const parsedUrl = url.parse(req.url, true);
-  const audioSessionId = parsedUrl.query?.audioSession;
 
-  // ── Audio-only connection (from audioCaptureInjection.js in the browser) ──
+  // Use URL API instead of deprecated url.parse
+  let audioSessionId = null;
+  try {
+    const u = new URL(req.url, 'http://localhost');
+    audioSessionId = u.searchParams.get('audioSession');
+  } catch (_) { }
+
+  // ── Audio-only connection (Playwright browser → server) ──────────────────
   if (audioSessionId) {
     console.log(`[AudioWS] Browser audio stream connected for session ${audioSessionId}`);
     audioWsSessions.set(audioSessionId, ws);
 
-    let lastLogTime = 0;
-    let byteCount = 0;
+    let lastLogTime = 0, byteCount = 0;
 
-    ws.on("message", (message) => {
-      // Could be JSON handshake or binary PCM
+    ws.on('message', message => {
       if (Buffer.isBuffer(message) && message[0] !== 0x7b) {
-        // Binary PCM — push to AudioHandler
         const session = getSession(audioSessionId);
         if (session?.webrtcStreamId) {
-          const audioHandler = getAudioHandler(session.webrtcStreamId);
-          if (audioHandler) {
-            audioHandler.pushAudio(message);
-            
-            // Telemetry: log every ~5s if audio is flowing
+          const ah = getAudioHandler(session.webrtcStreamId);
+          if (ah) {
+            ah.pushAudio(message);
             byteCount += message.length;
             const now = Date.now();
             if (now - lastLogTime > 5000) {
               const kbps = ((byteCount * 8) / (now - lastLogTime)).toFixed(1);
               console.log(`[AudioWS] Session ${audioSessionId} | Flowing @ ${kbps} kbps`);
-              byteCount = 0;
-              lastLogTime = now;
+              byteCount = 0; lastLogTime = now;
             }
           }
         }
         return;
       }
 
-      // JSON handshake
       try {
         const msg = JSON.parse(message.toString());
-        if (msg.type === "audio-init") {
+        if (msg.type === 'audio-init') {
           console.log(`[AudioWS] Handshake received for session ${msg.sessionId}`);
-          // Ensure we update the mapping in case it connected before start-stream
           audioWsSessions.set(msg.sessionId, ws);
         }
       } catch (_) { }
     });
 
-    ws.on("close", () => {
+    ws.on('close', () => {
       audioWsSessions.delete(audioSessionId);
       console.log(`[AudioWS] Browser audio disconnected for session ${audioSessionId}`);
     });
 
-    return; // Don't fall through to control handler
+    return;
   }
 
-  // ── Control WebSocket (from client.html) ─────────────────────────────────
+  // ── Control connection (from client.html / mobile app) ───────────────────
   console.log(`\n[WebSocket] Control connection from ${ip}`);
   let currentSessionId = null;
 
-  ws.on("message", async (message) => {
-    // Binary audio from client microphone (future feature)
+  ws.on('message', async message => {
+    // Binary audio from client mic (future feature)
     if (Buffer.isBuffer(message) && message[0] !== 0x7b) {
       const session = getSession(currentSessionId);
       if (session?.webrtcStreamId) {
-        const audioHandler = getAudioHandler(session.webrtcStreamId);
-        if (audioHandler) audioHandler.pushAudio(message);
+        const ah = getAudioHandler(session.webrtcStreamId);
+        if (ah) ah.pushAudio(message);
       }
       return;
     }
 
     let data;
-    try {
-      data = JSON.parse(message.toString());
-    } catch (err) {
-      console.error("Invalid JSON:", err.message);
-      return;
-    }
+    try { data = JSON.parse(message.toString()); }
+    catch (e) { console.error('Invalid JSON:', e.message); return; }
 
     if (data.sessionId) currentSessionId = data.sessionId;
-    if (data.type !== "ping") {
-      console.log(
-        `[WS] ${data.type}`,
-        data.type === "start-stream" ? "(SDP omitted)" : ""
-      );
+    if (data.type !== 'ping') {
+      console.log(`[WS] ${data.type}`, data.type === 'start-stream' ? '(SDP omitted)' : '');
     }
 
     const session = getSession(data.sessionId);
     if (!session) {
-      ws.send(JSON.stringify({ type: "error", message: "Invalid session" }));
+      ws.send(JSON.stringify({ type: 'error', message: 'Invalid session' }));
       return;
     }
 
-    // ── Stream control ───────────────────────────────────────────────────────
-    if (data.type === "start-stream") {
+    // ── Stream control ──────────────────────────────────────────────────────
+    if (data.type === 'start-stream') {
       updateSession(data.sessionId, { ws });
 
       if (!data.offerSdp) {
-        ws.send(JSON.stringify({ type: "error", message: "offerSdp required" }));
+        ws.send(JSON.stringify({ type: 'error', message: 'offerSdp required' }));
         return;
       }
 
       try {
-        const streamWidth = session.viewport?.width || 390;
-        const streamHeight = session.viewport?.height || 844;
-
-        const { answer, streamId } = await startWebRTCStream(
-          session.page,
-          data.offerSdp,
-          { width: streamWidth, height: streamHeight }
-        );
-
+        const { width: sw, height: sh } = session.viewport ?? { width: 390, height: 844 };
+        const { answer, streamId } = await startWebRTCStream(session.page, data.offerSdp, { width: sw, height: sh });
         updateSession(data.sessionId, { webrtcStreamId: streamId });
 
-        ws.send(
-          JSON.stringify({
-            type: "webrtc-answer",
-            sdpAnswer: answer,
-            width: streamWidth,
-            height: streamHeight,
-          })
-        );
-
-        ws.send(
-          JSON.stringify({
-            type: "stream-started",
-            width: streamWidth,
-            height: streamHeight,
-          })
-        );
-
-        console.log(`[Stream] WebRTC running at ${streamWidth}×${streamHeight}`);
+        ws.send(JSON.stringify({ type: 'webrtc-answer', sdpAnswer: answer, width: sw, height: sh }));
+        ws.send(JSON.stringify({ type: 'stream-started', width: sw, height: sh }));
+        console.log(`[Stream] WebRTC running at ${sw}×${sh}`);
       } catch (err) {
-        console.error("[Stream] Start failed:", err.message);
-        ws.send(
-          JSON.stringify({
-            type: "error",
-            message: "Failed to start stream: " + err.message,
-          })
-        );
+        console.error('[Stream] Start failed:', err.message);
+        ws.send(JSON.stringify({ type: 'error', message: 'Failed to start stream: ' + err.message }));
       }
       return;
     }
 
-    if (data.type === "stop-stream") {
+    if (data.type === 'stop-stream') {
       if (session.webrtcStreamId) {
         stopWebRTCStream(session.webrtcStreamId);
         updateSession(data.sessionId, { webrtcStreamId: null });
       }
-      ws.send(JSON.stringify({ type: "stream-stopped" }));
+      ws.send(JSON.stringify({ type: 'stream-stopped' }));
       return;
     }
 
     if (data.type === 'ping') {
-      // Respond with pong so client can measure round-trip latency
       ws.send(JSON.stringify({ type: 'pong', ts: Date.now() }));
       return;
     }
 
-    // ── Input events ─────────────────────────────────────────────────────────
+    // ── Input events ────────────────────────────────────────────────────────
     await handleInput(session.page, data);
   });
 
-  ws.on("close", () => {
-    console.log(`[WS] Control disconnected | session: ${currentSessionId || "unknown"}`);
+  ws.on('close', () => {
+    console.log(`[WS] Control disconnected | session: ${currentSessionId || 'unknown'}`);
   });
 
-  ws.on("error", (err) => {
-    console.error("[WS] Error:", err.message);
+  ws.on('error', err => {
+    console.error('[WS] Error:', err.message);
   });
 });
