@@ -183,6 +183,12 @@
       }
     }
 
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
     /* ── VIDEO CONTAINER ── */
     .video-wrap {
       position: relative;
@@ -495,16 +501,14 @@
     // CONFIG — change SERVER_URL to your server IP:port
     // ─────────────────────────────────────────────────────────────────────────────
     const SERVER_URL = (() => {
+      // Auto-detect: if this page is served from the Node server itself, use same host
       const loc = window.location;
-      // If served directly from the Node server (http://IP:3000), use same origin
-      if (loc.protocol !== 'file:' && loc.port === '3000') {
+      if (loc.hostname !== 'localhost' && loc.hostname !== '127.0.0.1' && loc.port === '3000') {
         return `${loc.protocol}//${loc.host}`;
       }
-      // Opening as a local file — point directly at the server
-      return 'http://127.0.0.1:3000'; //'http://185.181.8.32:3000';
+      // Fallback — edit this if serving client.html from somewhere else
+      return `http://${loc.hostname}:3000`;
     })();
-
-    // const SERVER_URL = "http://0.0.0.0:3000";
 
     const SERVER_W = 390;
     const SERVER_H = 844;
@@ -590,20 +594,9 @@
       if (pc) { try { pc.close(); } catch (_) { } }
 
       pc = new RTCPeerConnection({
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' },
-          { urls: 'stun:stun3.l.google.com:19302' },
-          { urls: 'stun:stun4.l.google.com:19302' },
-          // Free TURN relay — critical for mobile clients behind NAT
-          { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-          { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-          { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-        ],
+        iceServers,   // fetched from /ice-config before session starts
         iceCandidatePoolSize: 10,
         sdpSemantics: 'unified-plan',
-        // Prefer low-latency networking
         bundlePolicy: 'max-bundle',
         rtcpMuxPolicy: 'require',
       });
@@ -611,41 +604,67 @@
       // Collect tracks — assign srcObject once we have video
       pc._tracks = [];
 
+      // We expect exactly 2 tracks: video + audio.
+      // Wait until BOTH arrive before assigning srcObject and calling play().
+      // Calling play() too early (with only 1 track) causes silent failure on
+      // many mobile browsers.
+      let _videoTrack = null;
+      let _audioTrack = null;
+
+      function tryAttach() {
+        if (!_videoTrack) return; // need at least video
+        const tracks = [_videoTrack];
+        if (_audioTrack) tracks.push(_audioTrack);
+
+        // Always build a fresh MediaStream — never mutate an existing one
+        const ms = new MediaStream(tracks);
+        videoEl.srcObject = ms;
+
+        console.log('[WebRTC] srcObject set with', tracks.map(t => t.kind).join('+'));
+
+        if ('requestVideoFrameCallback' in videoEl) {
+          const tick = () => { frameCount++; videoEl.requestVideoFrameCallback(tick); };
+          videoEl.requestVideoFrameCallback(tick);
+        }
+
+        videoEl.onloadedmetadata = () => {
+          console.log('[WebRTC] Video size:', videoEl.videoWidth, 'x', videoEl.videoHeight);
+          updateStats();
+        };
+
+        attemptPlay();
+      }
+
       pc.ontrack = (e) => {
         console.log('[WebRTC] Track:', e.track.kind, e.track.readyState);
         pc._tracks.push(e.track);
 
         if (e.track.kind === 'video') {
-          // Rebuild MediaStream each time to avoid stale stream issues
-          videoEl.srcObject = new MediaStream(pc._tracks);
-
-          if ('requestVideoFrameCallback' in videoEl) {
-            const tick = () => { frameCount++; videoEl.requestVideoFrameCallback(tick); };
-            videoEl.requestVideoFrameCallback(tick);
-          }
-
-          videoEl.onloadedmetadata = () => {
-            console.log('[WebRTC] Video size:', videoEl.videoWidth, 'x', videoEl.videoHeight);
-            updateStats();
-          };
-
-          attemptPlay();
+          _videoTrack = e.track;
+          tryAttach();
         }
 
         if (e.track.kind === 'audio') {
-          // Re-attach srcObject to pick up audio track if video already playing
-          if (videoEl.srcObject) {
-            videoEl.srcObject = new MediaStream(pc._tracks);
-          }
+          _audioTrack = e.track;
+          // If video already attached, rebuild srcObject to include audio
+          if (videoEl.srcObject) tryAttach();
         }
 
-        // Monitor track health
         e.track.onended = () => {
           console.warn('[WebRTC] Track ended:', e.track.kind);
           if (streaming && e.track.kind === 'video') tryReconnect();
         };
 
-        e.track.onmute = () => { console.warn('[WebRTC] Track muted:', e.track.kind); };
+        e.track.onmute = () => {
+          console.warn('[WebRTC] Track muted:', e.track.kind);
+          // Some browsers fire onmute briefly — don't reconnect immediately
+          setTimeout(() => {
+            if (e.track.muted && streaming && e.track.kind === 'video') {
+              console.warn('[WebRTC] Track still muted after 3s — reconnecting');
+              tryReconnect();
+            }
+          }, 3000);
+        };
       };
 
       pc.onconnectionstatechange = () => {
@@ -684,34 +703,126 @@
     }
 
     // ─── Play with retries ────────────────────────────────────────────────────────
+    let _playAttempted = false;
+    let _waitFrameTimer = null;
+
     function attemptPlay() {
+      // Already playing — just make sure overlay is hidden
+      if (!videoEl.paused && videoEl.readyState >= 2) {
+        console.log('[WebRTC] Already playing — srcObject updated');
+        overlay.classList.add('hidden');
+        return;
+      }
+
+      // Don't stack multiple attempts
+      if (_playAttempted) return;
+      _playAttempted = true;
+
       videoEl.muted = true;
       videoEl.volume = 0;
 
-      const tryPlay = () => {
-        return videoEl.play().then(() => {
-          console.log('[WebRTC] ▶ Playing');
-          overlay.classList.add('hidden');
-          reconnectN = 0;
-          // Unmute after a tick — autoplay policy requires play() to succeed first
-          setTimeout(() => {
-            videoEl.muted = false;
-            videoEl.volume = 1;
-          }, 300);
-        });
-      };
+      overlay.classList.remove('hidden');
+      overlay.innerHTML = `
+    <div class="overlay-icon" style="animation:spin 1.2s linear infinite;display:inline-block">⟳</div>
+    <div class="overlay-text">Loading stream…</div>`;
 
-      tryPlay().catch(() => {
-        // Retry on canplay event
-        const onCan = () => {
-          videoEl.removeEventListener('canplay', onCan);
-          tryPlay().catch(() => showPlayOverlay());
+      // The root cause: readyState=0 means no frame data yet.
+      // We must wait until the browser has actual frame data (readyState >= 2)
+      // before calling play(), otherwise play() silently does nothing.
+      function waitForData(cb) {
+        // Already has data — go immediately
+        if (videoEl.readyState >= 2) { cb(); return; }
+
+        console.log('[WebRTC] Waiting for first frame data…');
+
+        // Primary signal — fires when first frame is decoded
+        const onReady = () => {
+          cleanup();
+          console.log('[WebRTC] First frame ready (readyState=' + videoEl.readyState + ')');
+          cb();
         };
-        videoEl.addEventListener('canplay', onCan);
-        setTimeout(() => {
-          videoEl.removeEventListener('canplay', onCan);
-          tryPlay().catch(() => showPlayOverlay());
-        }, 2000);
+
+        // Fallback signals
+        const onLoad = () => { cleanup(); cb(); };
+
+        function cleanup() {
+          clearTimeout(_waitFrameTimer);
+          videoEl.removeEventListener('loadeddata', onReady);
+          videoEl.removeEventListener('canplay', onReady);
+          videoEl.removeEventListener('loadedmetadata', onLoad);
+        }
+
+        videoEl.addEventListener('loadeddata', onReady, { once: true });
+        videoEl.addEventListener('canplay', onReady, { once: true });
+        videoEl.addEventListener('loadedmetadata', onLoad, { once: true });
+
+        // Polling fallback — some browsers on mobile never fire the above events
+        // when srcObject is set from a WebRTC stream. Poll readyState every 200ms.
+        let pollCount = 0;
+        const poll = setInterval(() => {
+          pollCount++;
+          if (videoEl.readyState >= 2) {
+            clearInterval(poll);
+            cleanup();
+            console.log('[WebRTC] First frame ready (polled, readyState=' + videoEl.readyState + ')');
+            cb();
+            return;
+          }
+          // Also check if tracks are delivering data
+          const vTrack = videoEl.srcObject?.getVideoTracks()[0];
+          if (vTrack && vTrack.readyState === 'live') {
+            // Force a re-assignment to wake up stalled decoders on some browsers
+            if (pollCount === 5) {
+              console.log('[WebRTC] Nudging srcObject to wake decoder…');
+              const ms = videoEl.srcObject;
+              videoEl.srcObject = null;
+              videoEl.srcObject = ms;
+            }
+          }
+          if (pollCount >= 30) { // 6 seconds max wait
+            clearInterval(poll);
+            cleanup();
+            console.warn('[WebRTC] Timeout waiting for frame data — attempting play anyway');
+            cb();
+          }
+        }, 200);
+
+        _waitFrameTimer = setTimeout(() => {
+          clearInterval(poll);
+          cleanup();
+          cb();
+        }, 8000);
+      }
+
+      waitForData(() => {
+        const doPlay = () => {
+          return videoEl.play().then(() => {
+            console.log('[WebRTC] ▶ Playing — readyState=' + videoEl.readyState);
+            _playAttempted = false;
+            overlay.classList.add('hidden');
+            reconnectN = 0;
+            // Unmute after play() resolves — browser requires this order
+            setTimeout(() => {
+              videoEl.muted = false;
+              videoEl.volume = 1;
+              console.log('[WebRTC] Audio unmuted');
+            }, 300);
+          });
+        };
+
+        doPlay().catch(err => {
+          console.warn('[WebRTC] play() failed:', err.name, err.message);
+          // NotAllowedError = autoplay blocked — show manual play button
+          if (err.name === 'NotAllowedError') {
+            _playAttempted = false;
+            showPlayOverlay();
+            return;
+          }
+          // Any other error — retry once after 500ms
+          setTimeout(() => {
+            doPlay().catch(() => { _playAttempted = false; showPlayOverlay(); });
+          }, 500);
+        });
       });
     }
 
@@ -745,11 +856,41 @@
       if (latLabel.textContent !== '·') latLabel.style.display = '';
     }, 1000);
 
+    // ─── ICE servers (fetched from server so credentials stay server-side) ────────
+    let iceServers = [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+    ];
+
+    async function fetchIceConfig() {
+      try {
+        const r = await fetch(SERVER_URL + '/ice-config');
+        if (r.ok) {
+          const data = await r.json();
+          if (data.iceServers?.length) {
+            iceServers = data.iceServers;
+            console.log('[ICE] Config loaded from server:', iceServers.length, 'servers');
+          }
+        }
+      } catch (e) {
+        console.warn('[ICE] Could not fetch config, using defaults:', e.message);
+      }
+    }
+
     // ─── Session flow ─────────────────────────────────────────────────────────────
     async function startSession() {
       setStatus('connecting', '…');
       startBtn.disabled = true;
       platSel.disabled = true;
+      _playAttempted = false;
+
+      overlay.classList.remove('hidden');
+      overlay.innerHTML = `
+    <div class="overlay-icon" style="animation:spin 1.2s linear infinite;display:inline-block">⟳</div>
+    <div class="overlay-text">Starting session…</div>`;
+
+      // Fetch ICE/TURN config from server first
+      await fetchIceConfig();
 
       try {
         const r = await fetch(SERVER_URL + '/start-session', {
@@ -779,6 +920,9 @@
 
       ws.onopen = async () => {
         console.log('[WS] open');
+        overlay.innerHTML = `
+      <div class="overlay-icon" style="animation:spin 1.2s linear infinite;display:inline-block">⟳</div>
+      <div class="overlay-text">Negotiating connection…</div>`;
         startPing();
 
         buildPC();
@@ -902,6 +1046,8 @@
       streaming = false;
       typingMode = false;
       inputBound = false;
+      _playAttempted = false;
+      if (_waitFrameTimer) { clearTimeout(_waitFrameTimer); _waitFrameTimer = null; }
       stopPing();
       resetControls();
       disarmTyping();
