@@ -500,15 +500,18 @@
     // ─────────────────────────────────────────────────────────────────────────────
     // CONFIG — change SERVER_URL to your server IP:port
     // ─────────────────────────────────────────────────────────────────────────────
-    const SERVER_URL = (() => {
-      // Auto-detect: if this page is served from the Node server itself, use same host
-      const loc = window.location;
-      if (loc.hostname !== 'localhost' && loc.hostname !== '127.0.0.1' && loc.port === '3000') {
-        return `${loc.protocol}//${loc.host}`;
-      }
-      // Fallback — edit this if serving client.html from somewhere else
-      return `http://${loc.hostname}:3000`;
-    })();
+    // const SERVER_URL = (() => {
+    //   // Auto-detect: if this page is served from the Node server itself, use same host
+    //   const loc = window.location;
+    //   if (loc.hostname !== 'localhost' && loc.hostname !== '127.0.0.1' && loc.port === '3000') {
+    //     return `${loc.protocol}//${loc.host}`;
+    //   }
+    //   // Fallback — edit this if serving client.html from somewhere else
+    //   return 'http://185.181.8.32:3000'; // `http://127.0.0.1:3000`; //`http://${loc.hostname}:3000`;
+    // })();
+
+    const SERVER_URL = 'http://192.168.100.62:3000'; //  'http://185.181.8.32:3000'; // `http://127.0.0.1:3000`; // 
+
 
     const SERVER_W = 390;
     const SERVER_H = 844;
