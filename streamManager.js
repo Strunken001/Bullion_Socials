@@ -27,12 +27,21 @@ const MAX_STALE_MS = 400;  // force-send if no frame sent for this long (~2.5 fp
 // ── Frame-rate cap ────────────────────────────────────────────────────────────
 const MIN_FRAME_INTERVAL_MS = 22; // ≈ 45 fps hard cap
 
-async function computeThumb(jpegBuffer) {
-  return sharp(jpegBuffer)
-    .resize(THUMB_W, THUMB_H, { fit: 'fill', kernel: 'nearest' })
-    .greyscale()
-    .raw()
-    .toBuffer();
+// Compute the 8×8 luminance thumbnail directly from an already-decoded RGBA
+// buffer. Avoids a second full JPEG decode per frame (the old computeThumb did
+// a separate sharp() decode just to downscale), which was a major CPU/lag cost.
+function thumbFromRgba(data, width, height) {
+  const out = new Uint8Array(THUMB_W * THUMB_H);
+  for (let ty = 0; ty < THUMB_H; ty++) {
+    const sy = Math.min(height - 1, ((ty + 0.5) * height / THUMB_H) | 0);
+    for (let tx = 0; tx < THUMB_W; tx++) {
+      const sx = Math.min(width - 1, ((tx + 0.5) * width / THUMB_W) | 0);
+      const idx = (sy * width + sx) * 4;
+      // Rec.601 luma
+      out[ty * THUMB_W + tx] = (data[idx] * 77 + data[idx + 1] * 150 + data[idx + 2] * 29) >> 8;
+    }
+  }
+  return out;
 }
 
 function isDifferent(thumbA, thumbB) {
@@ -140,8 +149,16 @@ async function startWebRTCStream(page, offerSdp, options = {}) {
 
         const buffer = Buffer.from(event.data, 'base64');
 
-        // Perceptual dedup + stale-frame override
-        const thumb = await computeThumb(buffer);
+        // Decode JPEG → RGBA exactly once.
+        const { data, info } = await sharp(buffer)
+          .ensureAlpha()
+          .raw()
+          .toBuffer({ resolveWithObject: true });
+        const { width, height } = info;
+
+        // Perceptual dedup (computed from the decoded RGBA, no extra decode) +
+        // stale-frame override. Skip only the I420 conversion + send when unchanged.
+        const thumb = thumbFromRgba(data, width, height);
         const stale = (now - lastSentAt) > MAX_STALE_MS;
 
         if (!stale && !isDifferent(lastThumb, thumb)) {
@@ -151,18 +168,8 @@ async function startWebRTCStream(page, offerSdp, options = {}) {
 
         lastThumb = thumb;
         lastSentAt = now;
+        if (skipped > 0) skipped = 0;
 
-        if (skipped > 0) {
-          skipped = 0;
-        }
-
-        // Decode JPEG → RGBA → I420 and push to WebRTC
-        const { data, info } = await sharp(buffer)
-          .ensureAlpha()
-          .raw()
-          .toBuffer({ resolveWithObject: true });
-
-        const { width, height } = info;
         const rgba = new Uint8ClampedArray(data.buffer, data.byteOffset, data.byteLength);
         const i420 = new Uint8ClampedArray((width * height * 3) / 2);
 

@@ -52,6 +52,35 @@ function sanitizeKey(v) {
   return String(v).replace(/[^a-zA-Z0-9_-]/g, '');
 }
 
+/**
+ * Build a Playwright proxy config for a residential gateway where the region is
+ * encoded in the username (Bright Data / Oxylabs / Smartproxy style).
+ *
+ * Env:
+ *   SOCIALS_PROXY_SERVER    e.g. http://gw.provider.io:7777   (required to enable)
+ *   SOCIALS_PROXY_USERNAME  template, e.g. user-country-{region}-session-{sid}
+ *   SOCIALS_PROXY_PASSWORD
+ *
+ * {region} → lowercased country code (defaults to env SOCIALS_PROXY_DEFAULT_REGION
+ * or 'us'); {sid} → a sticky-session id so the same exit IP is reused for a session.
+ * Returns undefined when no proxy server is configured (browser then goes direct).
+ */
+function buildProxy(region, stickyId) {
+  const server = process.env.SOCIALS_PROXY_SERVER;
+  if (!server) return undefined;
+
+  const reg = sanitizeKey((region || process.env.SOCIALS_PROXY_DEFAULT_REGION || 'us')).toLowerCase();
+  const usernameTpl = process.env.SOCIALS_PROXY_USERNAME || '';
+  const username = usernameTpl
+    .replace(/\{region\}/g, reg)
+    .replace(/\{sid\}/g, sanitizeKey(stickyId));
+
+  const proxy = { server };
+  if (username) proxy.username = username;
+  if (process.env.SOCIALS_PROXY_PASSWORD) proxy.password = process.env.SOCIALS_PROXY_PASSWORD;
+  return proxy;
+}
+
 // ── Start self-hosted TURN server ─────────────────────────────────────────────
 const turnRunning = startTurnServer(PUBLIC_IP);
 
@@ -116,7 +145,7 @@ const ALLOWED_PLATFORMS = {
 app.post('/start-session', requireServiceKey, async (req, res) => {
   let context, page;
   try {
-    const { platform, width, height, userId } = req.body;
+    const { platform, width, height, userId, region, country } = req.body;
     console.log(`\n--- New Flow: Start Session ---`);
     console.log(`[API] /start-session: platform=${platform}`);
 
@@ -139,9 +168,17 @@ app.post('/start-session', requireServiceKey, async (req, res) => {
     const storageState = fs.existsSync(sessionFile) ? sessionFile : undefined;
     if (storageState) console.log(`[Session] Reusing saved login for ${userKey}/${platform}`);
 
+    // Generate the session id up front so the residential proxy gets a stable
+    // sticky-session key (same exit IP for the whole session → fewer login
+    // challenges on Instagram/etc.).
+    const sessionId = uuidv4();
+    const proxy = buildProxy(region || country, sessionId);
+    if (proxy) console.log(`[Proxy] Using residential exit for region=${(region || country || 'default')}`);
+
     context = await browser.newContext({
       viewport: { width: viewWidth, height: viewHeight },
       storageState,
+      proxy,
       deviceScaleFactor: 1,
       locale: 'en-US',
       hasTouch: true,
@@ -180,11 +217,12 @@ app.post('/start-session', requireServiceKey, async (req, res) => {
       await page.goto(ALLOWED_PLATFORMS[platform], { waitUntil: 'commit', timeout: 30000 });
     } catch (e) { console.warn(`[Navigation] ${platform}:`, e.message); }
 
-    const sessionId = uuidv4();
     createSession(sessionId, context, page, { width: viewWidth, height: viewHeight, userId: userKey });
 
-    // Audio injection — 127.0.0.1 because Playwright runs server-side
+    // Audio injection — loopback because Playwright runs server-side. Use the
+    // actual listen port, not a hardcoded 3000, or audio silently fails when PORT differs.
     try {
+      const audioWsUrl = `ws://127.0.0.1:${process.env.PORT || 3000}`;
       await page.evaluate(({ wsUrl, sId }) => {
         const init = () => {
           if (typeof window.initAudioCapture === 'function')
@@ -192,7 +230,8 @@ app.post('/start-session', requireServiceKey, async (req, res) => {
         };
         init();
         setTimeout(init, 1500);
-      }, { wsUrl: 'ws://127.0.0.1:3000', sId: sessionId });
+        setTimeout(init, 4000);
+      }, { wsUrl: audioWsUrl, sId: sessionId });
     } catch (e) { console.warn('[AudioInjection]', e.message); }
 
     res.json({ sessionId, width: viewWidth, height: viewHeight });
