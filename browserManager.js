@@ -19,11 +19,13 @@ const IS_WINDOWS = os.platform() === 'win32';
 
 const CHROMIUM_ARGS = [
   // ── Sandbox ───────────────────────────────────────────────────────────────
+  // NOTE: --no-sandbox is required because the container currently runs as root.
+  // RECOMMENDED: run as a non-root user (e.g. the Playwright image's `pwuser`)
+  // and drop --no-sandbox so the Chromium sandbox actually contains renderer
+  // exploits. The web-security / site-isolation disables below were removed —
+  // a user-navigable browser must keep the same-origin policy and site isolation.
   '--no-sandbox',
   '--disable-setuid-sandbox',
-  '--allow-running-insecure-content',
-  '--disable-web-security',
-  '--disable-site-isolation-trials',
 
   // ── Software GPU / SwiftShader ────────────────────────────────────────────
   '--use-gl=swiftshader',

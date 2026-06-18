@@ -27,7 +27,9 @@ function startTurnServer(publicIp) {
 
             authMech: 'long-term',
             credentials: {
-                stream: 'stream2024',   // username: stream, password: stream2024
+                // Credentials come from env (no longer hardcoded). Rotate periodically.
+                // TODO: move to ephemeral TURN REST credentials (HMAC, time-limited).
+                [process.env.TURN_USERNAME || 'stream']: process.env.TURN_CREDENTIAL || 'stream2024',
             },
 
             listeningPort: 3478,
@@ -45,7 +47,7 @@ function startTurnServer(publicIp) {
 
         turnServer.start();
         console.log(`[TURN] Server started on ${publicIp || '0.0.0.0'}:3478`);
-        console.log('[TURN] Credentials — username: stream | password: stream2024');
+        console.log('[TURN] Credentials loaded from env (TURN_USERNAME / TURN_CREDENTIAL)');
         return true;
 
     } catch (err) {

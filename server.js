@@ -13,10 +13,15 @@ const {
 const { startWebRTCStream, stopWebRTCStream, getAudioHandler } = require('./streamManager');
 const { handleInput } = require('./inputHandler');
 const { startTurnServer, stopTurnServer } = require('./turnServer');
+const { requireServiceKey, verifySessionToken } = require('./auth');
 const { v4: uuidv4 } = require('uuid');
 const cors = require('cors');
 const fs = require('fs');
 const os = require('os');
+
+// TURN credentials (no longer hardcoded — set via env, rotate periodically)
+const TURN_USERNAME = process.env.TURN_USERNAME || 'stream';
+const TURN_CREDENTIAL = process.env.TURN_CREDENTIAL || 'stream2024';
 
 // ── Ensure logs + sessions directories exist ──────────────────────────────────
 ['./logs', './sessions'].forEach(d => {
@@ -41,12 +46,25 @@ function getPublicIp() {
 const PUBLIC_IP = process.env.PUBLIC_IP || getPublicIp();
 console.log(`[Server] Public IP: ${PUBLIC_IP}`);
 
+// Reduce any identifier to a safe filename component (defeats path traversal).
+function sanitizeKey(v) {
+  if (v === undefined || v === null) return '';
+  return String(v).replace(/[^a-zA-Z0-9_-]/g, '');
+}
+
 // ── Start self-hosted TURN server ─────────────────────────────────────────────
 const turnRunning = startTurnServer(PUBLIC_IP);
 
 // ── Express setup ─────────────────────────────────────────────────────────────
 const app = express();
-app.use(cors({ origin: '*', methods: ['GET', 'POST', 'OPTIONS'] }));
+// Lock CORS to configured origins (comma-separated env). Non-browser clients
+// (the mobile app, the Laravel backend) send no Origin header and are unaffected.
+const CORS_ORIGINS = (process.env.SOCIALS_CORS_ORIGINS || '')
+  .split(',').map(s => s.trim()).filter(Boolean);
+app.use(cors({
+  origin: CORS_ORIGINS.length ? CORS_ORIGINS : false,
+  methods: ['GET', 'POST', 'OPTIONS'],
+}));
 app.use(express.json());
 
 // Serve client.html — always open http://YOUR_IP:3000 in browser
@@ -65,8 +83,8 @@ app.get('/ice-config', (req, res) => {
   ];
   if (turnRunning) {
     iceServers.push(
-      { urls: `turn:${PUBLIC_IP}:3478`, username: 'stream', credential: 'stream2024' },
-      { urls: `turn:${PUBLIC_IP}:3478?transport=tcp`, username: 'stream', credential: 'stream2024' },
+      { urls: `turn:${PUBLIC_IP}:3478`, username: TURN_USERNAME, credential: TURN_CREDENTIAL },
+      { urls: `turn:${PUBLIC_IP}:3478?transport=tcp`, username: TURN_USERNAME, credential: TURN_CREDENTIAL },
     );
   }
   // Public TURN as fallback
@@ -95,10 +113,10 @@ const ALLOWED_PLATFORMS = {
 };
 
 // ── POST /start-session ───────────────────────────────────────────────────────
-app.post('/start-session', async (req, res) => {
+app.post('/start-session', requireServiceKey, async (req, res) => {
   let context, page;
   try {
-    const { platform, width, height } = req.body;
+    const { platform, width, height, userId } = req.body;
     console.log(`\n--- New Flow: Start Session ---`);
     console.log(`[API] /start-session: platform=${platform}`);
 
@@ -106,14 +124,20 @@ app.post('/start-session', async (req, res) => {
       return res.status(400).json({ error: `Platform "${platform}" not allowed` });
     }
 
+    // userId scopes saved login state so sessions are never shared across users.
+    const userKey = sanitizeKey(userId);
+    if (!userKey) {
+      return res.status(400).json({ error: 'userId required' });
+    }
+
     const browser = getBrowser();
     const viewWidth = width ? parseInt(width, 10) : 390;
     const viewHeight = height ? parseInt(height, 10) : 844;
 
-    // Reuse saved login state if available
-    const sessionFile = `./sessions/session_${platform}.json`;
+    // Reuse saved login state if available — per user + platform, never global.
+    const sessionFile = `./sessions/session_${userKey}_${platform}.json`;
     const storageState = fs.existsSync(sessionFile) ? sessionFile : undefined;
-    if (storageState) console.log(`[Session] Reusing saved login for ${platform}`);
+    if (storageState) console.log(`[Session] Reusing saved login for ${userKey}/${platform}`);
 
     context = await browser.newContext({
       viewport: { width: viewWidth, height: viewHeight },
@@ -124,8 +148,10 @@ app.post('/start-session', async (req, res) => {
       isMobile: true,
       userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
       extraHTTPHeaders: { 'Accept-Language': 'en-US,en;q=0.9' },
-      bypassCSP: true,
-      permissions: ['microphone', 'camera', 'geolocation', 'notifications'],
+      // bypassCSP removed — do not strip target sites' Content-Security-Policy.
+      // Grant only what the streaming product needs; geolocation/camera removed
+      // (no real devices server-side, and geolocation would leak the host's location).
+      permissions: ['microphone', 'notifications'],
     });
 
     await context.addInitScript(audioInjectionScript);
@@ -155,7 +181,7 @@ app.post('/start-session', async (req, res) => {
     } catch (e) { console.warn(`[Navigation] ${platform}:`, e.message); }
 
     const sessionId = uuidv4();
-    createSession(sessionId, context, page, { width: viewWidth, height: viewHeight });
+    createSession(sessionId, context, page, { width: viewWidth, height: viewHeight, userId: userKey });
 
     // Audio injection — 127.0.0.1 because Playwright runs server-side
     try {
@@ -181,20 +207,27 @@ app.post('/start-session', async (req, res) => {
 });
 
 // ── POST /save-session — call after logging in via the stream ─────────────────
-app.post('/save-session', async (req, res) => {
+app.post('/save-session', requireServiceKey, async (req, res) => {
   try {
     const { sessionId, platform } = req.body;
     const session = getSession(sessionId);
     if (!session) return res.status(404).json({ error: 'Session not found' });
-    const file = `./sessions/session_${platform || 'default'}.json`;
+
+    // Validate platform against the allowlist and scope the file to the session's
+    // user. Never interpolate raw request input into a path (path-traversal fix).
+    if (!ALLOWED_PLATFORMS[platform]) {
+      return res.status(400).json({ error: `Platform "${platform}" not allowed` });
+    }
+    const userKey = sanitizeKey(session.userId) || 'default';
+    const file = `./sessions/session_${userKey}_${platform}.json`;
     await session.context.storageState({ path: file });
-    console.log(`[Session] Saved login for ${platform} → ${file}`);
-    res.json({ success: true, file });
+    console.log(`[Session] Saved login for ${userKey}/${platform} → ${file}`);
+    res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── POST /end-session ─────────────────────────────────────────────────────────
-app.post('/end-session', async (req, res) => {
+app.post('/end-session', requireServiceKey, async (req, res) => {
   try {
     const { sessionId } = req.body;
     const session = getSession(sessionId);
@@ -227,9 +260,11 @@ wss.on('connection', (ws, req) => {
   const ip = req.socket.remoteAddress;
 
   let audioSessionId = null;
+  let controlToken = null;
   try {
     const u = new URL(req.url, 'http://localhost');
     audioSessionId = u.searchParams.get('audioSession');
+    controlToken = u.searchParams.get('token');
   } catch (_) { }
 
   // ── Audio-only (Playwright browser → Node) ────────────────────────────────
@@ -272,7 +307,18 @@ wss.on('connection', (ws, req) => {
   }
 
   // ── Control connection (client browser / mobile app) ──────────────────────
-  console.log(`\n[WebSocket] Control from ${ip}`);
+  // Require a valid per-session token (minted by the Laravel backend). This binds
+  // the WS to one authenticated user + sessionId, so nobody can drive a session
+  // by merely knowing/guessing its id.
+  const claims = verifySessionToken(controlToken);
+  if (!claims) {
+    console.warn(`[WebSocket] Rejected control connection from ${ip}: invalid token`);
+    ws.send(JSON.stringify({ type: 'error', message: 'Unauthorized' }));
+    ws.close(1008, 'Unauthorized');
+    return;
+  }
+
+  console.log(`\n[WebSocket] Control from ${ip} | user=${claims.uid} session=${claims.sid}`);
   let currentSessionId = null;
 
   ws.on('message', async message => {
@@ -281,6 +327,12 @@ wss.on('connection', (ws, req) => {
     try { data = JSON.parse(message.toString()); }
     catch (e) { console.error('Invalid JSON:', e.message); return; }
 
+    // The token is bound to exactly one sessionId — ignore any other.
+    if (data.sessionId && data.sessionId !== claims.sid) {
+      ws.send(JSON.stringify({ type: 'error', message: 'Session mismatch' }));
+      return;
+    }
+    data.sessionId = claims.sid;
     if (data.sessionId) currentSessionId = data.sessionId;
     if (data.type !== 'ping')
       console.log(`[WS] ${data.type}`, data.type === 'start-stream' ? '(SDP omitted)' : '');

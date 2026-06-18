@@ -16,6 +16,7 @@ function createSession(id, context, page, extras = {}) {
   sessions.set(id, {
     context,
     page,
+    userId: extras.userId || null,
     viewport: {
       width: extras.width || 390,
       height: extras.height || 850,
