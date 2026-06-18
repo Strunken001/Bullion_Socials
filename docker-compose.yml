@@ -48,6 +48,10 @@ services:
     environment:
       - NODE_ENV=production
       - DISPLAY=:99
+    # Load secrets/config (SOCIALS_SERVICE_KEY, SOCIALS_TOKEN_SECRET, SOCIALS_PROXY_*,
+    # TURN_*, etc.) from a .env file placed next to this compose file.
+    env_file:
+      - .env
 
     # ── Shared memory ─────────────────────────────────────────────────────────
     # Chromium writes rendering data to /dev/shm. The default Docker size (64 MB)

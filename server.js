@@ -2,6 +2,9 @@
  * server.js — Production ready for bare Windows Server + PM2
  */
 
+// Load .env FIRST — before any module (e.g. auth.js) reads process.env at import.
+require('dotenv').config();
+
 const express = require('express');
 const { WebSocketServer } = require('ws');
 const path = require('path');
