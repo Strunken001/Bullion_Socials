@@ -56,31 +56,42 @@ function sanitizeKey(v) {
 }
 
 /**
- * Build a Playwright proxy config for a residential gateway where the region is
- * encoded in the username (Bright Data / Oxylabs / Smartproxy style).
+ * Build a Playwright proxy config from the Smartproxy residential credentials.
  *
- * Env:
- *   SOCIALS_PROXY_SERVER    e.g. http://gw.provider.io:7777   (required to enable)
- *   SOCIALS_PROXY_USERNAME  template, e.g. user-country-{region}-session-{sid}
- *   SOCIALS_PROXY_PASSWORD
+ * Env (matches the existing .env):
+ *   PROXY_HOST, PROXY_PORT          endpoint (required to enable the proxy)
+ *   PROXY_USER, PROXY_PASS          credentials
+ *   PROXY_COUNTRY                   default exit country (e.g. NG)
+ *   PROXY_USERNAME_FORMAT           optional template for providers that geo-target
+ *                                   / pin sticky sessions via the username, e.g.
+ *                                   "{user}-country-{country}-session-{sid}"
  *
- * {region} → lowercased country code (defaults to env SOCIALS_PROXY_DEFAULT_REGION
- * or 'us'); {sid} → a sticky-session id so the same exit IP is reused for a session.
- * Returns undefined when no proxy server is configured (browser then goes direct).
+ * Placeholders: {user} {pass-not-used} {country}=PROXY_COUNTRY, {region}=backend
+ * region (falls back to country), {sid}=sticky session id. With no template the
+ * raw PROXY_USER is used as-is. Returns undefined when PROXY_HOST/PORT are unset
+ * (browser then connects directly).
  */
 function buildProxy(region, stickyId) {
-  const server = process.env.SOCIALS_PROXY_SERVER;
-  if (!server) return undefined;
+  const host = process.env.PROXY_HOST;
+  const port = process.env.PROXY_PORT;
+  if (!host || !port) return undefined;
 
-  const reg = sanitizeKey((region || process.env.SOCIALS_PROXY_DEFAULT_REGION || 'us')).toLowerCase();
-  const usernameTpl = process.env.SOCIALS_PROXY_USERNAME || '';
-  const username = usernameTpl
-    .replace(/\{region\}/g, reg)
-    .replace(/\{sid\}/g, sanitizeKey(stickyId));
+  const user = process.env.PROXY_USER || '';
+  const pass = process.env.PROXY_PASS || '';
+  const country = sanitizeKey(process.env.PROXY_COUNTRY || '').toLowerCase();
+  const reg = sanitizeKey(region || country).toLowerCase();
 
-  const proxy = { server };
+  const fmt = process.env.PROXY_USERNAME_FORMAT;
+  const username = fmt
+    ? fmt.replace(/\{user\}/g, user)
+         .replace(/\{country\}/g, country)
+         .replace(/\{region\}/g, reg)
+         .replace(/\{sid\}/g, sanitizeKey(stickyId))
+    : user;
+
+  const proxy = { server: `http://${host}:${port}` };
   if (username) proxy.username = username;
-  if (process.env.SOCIALS_PROXY_PASSWORD) proxy.password = process.env.SOCIALS_PROXY_PASSWORD;
+  if (pass) proxy.password = pass;
   return proxy;
 }
 
