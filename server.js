@@ -153,6 +153,12 @@ const ALLOWED_PLATFORMS = {
   messenger: 'https://www.messenger.com/',
   youtube: 'https://www.youtube.com',
   google: 'https://www.google.com',
+  netflix: 'https://www.netflix.com',
+  prime: 'https://www.primevideo.com',
+  crunchyroll: 'https://www.crunchyroll.com',
+  sportybet: 'https://www.sportybet.com',
+  bet9ja: 'https://www.bet9ja.com',
+  stake: 'https://stake.com',
 };
 
 // ── POST /start-session ───────────────────────────────────────────────────────
