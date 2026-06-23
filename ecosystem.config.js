@@ -35,6 +35,9 @@ module.exports = {
 
                 // Prevent Node from running out of heap on long sessions
                 NODE_OPTIONS: '--max-old-space-size=2048',
+                // Run Playwright in non-headless mode so Xvfb rendering includes
+                // video frames for sites like YouTube. Set to 'false' to disable.
+                PLAYWRIGHT_HEADLESS: 'false',
             },
 
             // Log files — check these when things go wrong
