@@ -92,8 +92,13 @@ const CHROMIUM_ARGS = [
 async function initBrowser() {
   console.log(`[Browser] Launching (attempt ${restartCount + 1})…`);
 
+  // Allow running in non-headless mode (useful with Xvfb) by setting
+  // PLAYWRIGHT_HEADLESS='false' in the environment when needed.
+  const headlessEnv = process.env.PLAYWRIGHT_HEADLESS;
+  const headless = headlessEnv === undefined ? true : (headlessEnv !== 'false');
+
   browser = await chromium.launch({
-    headless: true,
+    headless,
     args: CHROMIUM_ARGS,
     timeout: 60000,
   });
