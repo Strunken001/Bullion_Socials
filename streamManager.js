@@ -150,6 +150,7 @@ async function startWebRTCStream(page, offerSdp, options = {}) {
   let lastSentAt = 0;
   let lastFrameAt = 0;
   let frameCount = 0;
+  let cdpFramesReceived = 0;
 
   // Frame queue: hold the latest frame + track if one is currently processing
   let frameQueue = null;
@@ -227,6 +228,9 @@ async function startWebRTCStream(page, offerSdp, options = {}) {
 
     cdpSession.on('Page.screencastFrame', (event) => {
       try {
+        // Count received frames (diagnostic)
+        cdpFramesReceived++;
+        if (cdpFramesReceived % 30 === 1) console.log(`[CDP] frame received #${cdpFramesReceived}`);
         // ACK immediately — non-blocking
         cdpSession.send('Page.screencastFrameAck', { sessionId: event.sessionId }).catch(() => { });
 
