@@ -149,10 +149,68 @@ async function startWebRTCStream(page, offerSdp, options = {}) {
   let lastSentAt = 0;
   let lastFrameAt = 0;
   let frameCount = 0;
-  let processingFrame = false; // Prevent frame queue buildup
+  let processingFrame = false;
+  let pendingFrame = null; // Hold one frame while processing
 
   try {
     cdpSession = await page.context().newCDPSession(page);
+
+  const processNextFrame = async () => {
+    if (!pendingFrame || processingFrame) return;
+
+    processingFrame = true;
+    const event = pendingFrame;
+    pendingFrame = null;
+
+    try {
+      const now = performance.now();
+      const buffer = Buffer.from(event.data, 'base64');
+
+      // Decode JPEG → RGBA exactly once.
+      const { data, info } = await sharp(buffer)
+        .ensureAlpha()
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+      const { width, height } = info;
+
+      // Perceptual dedup (computed from the decoded RGBA, no extra decode) +
+      // stale-frame override. Skip only the I420 conversion + send when unchanged.
+      const thumb = thumbFromRgba(data, width, height);
+      const stale = (now - lastSentAt) > MAX_STALE_MS;
+
+      if (!stale && !isDifferent(lastThumb, thumb)) {
+        skipped++;
+        processingFrame = false;
+        // Try to process the next pending frame immediately
+        setImmediate(processNextFrame);
+        return;
+      }
+
+      lastThumb = thumb;
+      lastSentAt = now;
+      if (skipped > 0) skipped = 0;
+
+      const rgba = new Uint8ClampedArray(data.buffer, data.byteOffset, data.byteLength);
+      const i420 = new Uint8ClampedArray((width * height * 3) / 2);
+
+      rgbaToI420({ width, height, data: rgba }, { width, height, data: i420 });
+
+      videoSource.onFrame({ width, height, data: i420 });
+      if ((frameCount = (frameCount || 0) + 1) % 30 === 1)
+        console.log(`[WebRTC] video frame #${frameCount} sent (${width}x${height}), skipped=${skipped}`);
+
+      processingFrame = false;
+      // Try to process the next pending frame immediately
+      setImmediate(processNextFrame);
+    } catch (e) {
+      processingFrame = false;
+      if (!e.message?.includes('premature') && !e.message?.includes('Target closed')) {
+        console.error('[Frame Error]', e.message);
+      }
+      setImmediate(processNextFrame);
+    }
+  };
+
 
     cdpSession.on('Page.screencastFrame', (event) => {
       try {
@@ -211,57 +269,15 @@ async function startWebRTCStream(page, offerSdp, options = {}) {
               console.error('[Frame Error]', e.message);
             }
           }
-        });
-      } catch (e) {
-        if (!e.message?.includes('premature') && !e.message?.includes('Target closed')) {
-          console.error('[Frame Event Error]', e.message);
-        }
-      }
-    });
+         lastFrameAt = now;
 
-    // Capture at 1.5× CSS resolution for sharpness without excess bandwidth
-    const capW = Math.round((options.width || 390) * 1.5);
-    const capH = Math.round((options.height || 844) * 1.5);
+         // Queue this frame — drop old pending frame if new one arrives faster
+         pendingFrame = event;
 
-    await cdpSession.send('Page.startScreencast', {
-      format: 'jpeg',
-      quality: 92,        // High quality — mobile screens warrant it
-      maxWidth: capW,
-      maxHeight: capH,
-      everyNthFrame: 1,         // Every frame — dedup handles dropping unchanged ones
-    });
-
-    console.log(`[StreamManager] Stream ${streamId} started at ${options.width}×${options.height}`);
-
-  } catch (err) {
-    console.error('[StreamManager] Failed to start stream:', err.message);
-    peerConnection.close();
-    throw err;
-  }
-
-  // ── Teardown on PC disconnect ────────────────────────────────────────────
-  peerConnection.onconnectionstatechange = () => {
-    const state = peerConnection.connectionState;
-    console.log(`[StreamManager] PC state: ${state} (${streamId})`);
-    if (['disconnected', 'failed', 'closed'].includes(state)) {
-      stopWebRTCStream(streamId);
-    }
-  };
-
-  activeStreams.set(streamId, {
-    peerConnection,
-    videoSource,
-    audioHandler,
-    cdpSession,
-    videoTrack,
-    audioTrack,
-  });
-
-  return { answer: finalSdp, streamId };
-}
-
-function stopWebRTCStream(streamId) {
-  const stream = activeStreams.get(streamId);
+         // Trigger processing if not busy
+         if (!processingFrame) {
+           setImmediate(processNextFrame);
+         }
   if (!stream) return;
 
   try {
