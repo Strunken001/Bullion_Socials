@@ -72,6 +72,13 @@ async function startWebRTCStream(page, offerSdp, options = {}) {
       { urls: 'stun:stun4.l.google.com:19302' },
       { urls: 'stun:global.stun.twilio.com:3478' },
       { urls: 'stun:stun.services.mozilla.com' },
+      // Self-hosted TURN on this same box (UDP 3478 + relay range 49152-65535 are
+      // opened in the firewall). The server side MUST advertise it too — otherwise
+      // it only had the flaky public openrelay and media never relayed (black video).
+      ...(process.env.PUBLIC_IP ? [
+        { urls: `turn:${process.env.PUBLIC_IP}:3478`, username: process.env.TURN_USERNAME || 'stream', credential: process.env.TURN_CREDENTIAL || 'stream2024' },
+        { urls: `turn:${process.env.PUBLIC_IP}:3478?transport=tcp`, username: process.env.TURN_USERNAME || 'stream', credential: process.env.TURN_CREDENTIAL || 'stream2024' },
+      ] : []),
       // TURN relay — essential for clients behind strict NAT / mobile networks
       {
         urls: 'turn:openrelay.metered.ca:80',
@@ -93,6 +100,13 @@ async function startWebRTCStream(page, offerSdp, options = {}) {
     bundlePolicy: 'max-bundle',
     rtcpMuxPolicy: 'require',
   });
+
+  // ── TEMP DIAGNOSTIC LOGGING ───────────────────────────────────────────────
+  const _t0 = Date.now();
+  peerConnection.oniceconnectionstatechange = () =>
+    console.log(`[WebRTC ${streamId}] ICE=${peerConnection.iceConnectionState} (+${Date.now() - _t0}ms)`);
+  peerConnection.onconnectionstatechange = () =>
+    console.log(`[WebRTC ${streamId}] conn=${peerConnection.connectionState}`);
 
   // ── Video track ──────────────────────────────────────────────────────────
   const videoSource = new RTCVideoSource({ isScreencast: true });
@@ -126,6 +140,7 @@ async function startWebRTCStream(page, offerSdp, options = {}) {
   });
 
   const finalSdp = peerConnection.localDescription.sdp;
+  console.log(`[WebRTC ${streamId}] answer candidates=${(finalSdp.match(/a=candidate/g) || []).length} relay=${(finalSdp.match(/typ relay/g) || []).length} srflx=${(finalSdp.match(/typ srflx/g) || []).length}`);
 
   // ── CDP screencast ───────────────────────────────────────────────────────
   let cdpSession = null;
@@ -133,53 +148,73 @@ async function startWebRTCStream(page, offerSdp, options = {}) {
   let skipped = 0;
   let lastSentAt = 0;
   let lastFrameAt = 0;
+  let frameCount = 0;
+  let processingFrame = false; // Prevent frame queue buildup
 
   try {
     cdpSession = await page.context().newCDPSession(page);
 
-    cdpSession.on('Page.screencastFrame', async (event) => {
+    cdpSession.on('Page.screencastFrame', (event) => {
       try {
-        // ACK first — lets Chrome's own change-detection work properly
+        // ACK immediately — non-blocking
         cdpSession.send('Page.screencastFrameAck', { sessionId: event.sessionId }).catch(() => { });
 
-        // Frame-rate cap
+        // Frame-rate cap (simple check, don't process if too recent)
         const now = performance.now();
         if (now - lastFrameAt < MIN_FRAME_INTERVAL_MS) return;
+
+        // Skip processing if already busy — prevents frame queue buildup that causes memory bloat
+        if (processingFrame) return;
+        processingFrame = true;
         lastFrameAt = now;
 
-        const buffer = Buffer.from(event.data, 'base64');
+        // Process frame asynchronously but don't await it — let event loop continue
+        setImmediate(async () => {
+          try {
+            const buffer = Buffer.from(event.data, 'base64');
 
-        // Decode JPEG → RGBA exactly once.
-        const { data, info } = await sharp(buffer)
-          .ensureAlpha()
-          .raw()
-          .toBuffer({ resolveWithObject: true });
-        const { width, height } = info;
+            // Decode JPEG → RGBA exactly once.
+            const { data, info } = await sharp(buffer)
+              .ensureAlpha()
+              .raw()
+              .toBuffer({ resolveWithObject: true });
+            const { width, height } = info;
 
-        // Perceptual dedup (computed from the decoded RGBA, no extra decode) +
-        // stale-frame override. Skip only the I420 conversion + send when unchanged.
-        const thumb = thumbFromRgba(data, width, height);
-        const stale = (now - lastSentAt) > MAX_STALE_MS;
+            // Perceptual dedup (computed from the decoded RGBA, no extra decode) +
+            // stale-frame override. Skip only the I420 conversion + send when unchanged.
+            const thumb = thumbFromRgba(data, width, height);
+            const stale = (now - lastSentAt) > MAX_STALE_MS;
 
-        if (!stale && !isDifferent(lastThumb, thumb)) {
-          skipped++;
-          return;
-        }
+            if (!stale && !isDifferent(lastThumb, thumb)) {
+              skipped++;
+              processingFrame = false;
+              return;
+            }
 
-        lastThumb = thumb;
-        lastSentAt = now;
-        if (skipped > 0) skipped = 0;
+            lastThumb = thumb;
+            lastSentAt = now;
+            if (skipped > 0) skipped = 0;
 
-        const rgba = new Uint8ClampedArray(data.buffer, data.byteOffset, data.byteLength);
-        const i420 = new Uint8ClampedArray((width * height * 3) / 2);
+            const rgba = new Uint8ClampedArray(data.buffer, data.byteOffset, data.byteLength);
+            const i420 = new Uint8ClampedArray((width * height * 3) / 2);
 
-        rgbaToI420({ width, height, data: rgba }, { width, height, data: i420 });
+            rgbaToI420({ width, height, data: rgba }, { width, height, data: i420 });
 
-        videoSource.onFrame({ width, height, data: i420 });
+            videoSource.onFrame({ width, height, data: i420 });
+            if ((frameCount = (frameCount || 0) + 1) % 60 === 1)
+              console.log(`[WebRTC] video frame #${frameCount} sent (${width}x${height})`);
 
+            processingFrame = false;
+          } catch (e) {
+            processingFrame = false;
+            if (!e.message?.includes('premature') && !e.message?.includes('Target closed')) {
+              console.error('[Frame Error]', e.message);
+            }
+          }
+        });
       } catch (e) {
         if (!e.message?.includes('premature') && !e.message?.includes('Target closed')) {
-          console.error('[Frame Error]', e.message);
+          console.error('[Frame Event Error]', e.message);
         }
       }
     });
