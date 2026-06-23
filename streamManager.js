@@ -8,6 +8,7 @@
  *  4. Capture quality raised; frame-rate cap raised to 45 fps
  *  5. Graceful CDP session recovery — stream doesn't die on a single bad frame
  *  6. Audio handler leak fixed — stop() called correctly on teardown
+ *  7. Continuous frame processing via queue to prevent stalling after first frame
  */
 
 const { RTCPeerConnection, nonstandard } = require('@roamhq/wrtc');
@@ -142,50 +143,59 @@ async function startWebRTCStream(page, offerSdp, options = {}) {
   const finalSdp = peerConnection.localDescription.sdp;
   console.log(`[WebRTC ${streamId}] answer candidates=${(finalSdp.match(/a=candidate/g) || []).length} relay=${(finalSdp.match(/typ relay/g) || []).length} srflx=${(finalSdp.match(/typ srflx/g) || []).length}`);
 
-  // ── CDP screencast ───────────────────────────────────────────────────────
+  // ── CDP screencast with continuous frame processing ─────────────────────
   let cdpSession = null;
   let lastThumb = null;
   let skipped = 0;
   let lastSentAt = 0;
   let lastFrameAt = 0;
   let frameCount = 0;
-  let processingFrame = false;
-  let pendingFrame = null; // Hold one frame while processing
 
-  try {
-    cdpSession = await page.context().newCDPSession(page);
+  // Frame queue: hold the latest frame + track if one is currently processing
+  let frameQueue = null;
+  let isProcessing = false;
 
-  const processNextFrame = async () => {
-    if (!pendingFrame || processingFrame) return;
+  const processQueue = async () => {
+    if (isProcessing || !frameQueue) return;
+    isProcessing = true;
 
-    processingFrame = true;
-    const event = pendingFrame;
-    pendingFrame = null;
+    const event = frameQueue;
+    frameQueue = null; // Pop from queue
 
     try {
       const now = performance.now();
+
+      // Check frame-rate cap
+      if (now - lastFrameAt < MIN_FRAME_INTERVAL_MS) {
+        isProcessing = false;
+        // Check if another frame arrived while we were checking
+        if (frameQueue) setImmediate(processQueue);
+        return;
+      }
+      lastFrameAt = now;
+
       const buffer = Buffer.from(event.data, 'base64');
 
-      // Decode JPEG → RGBA exactly once.
+      // Decode JPEG → RGBA exactly once
       const { data, info } = await sharp(buffer)
         .ensureAlpha()
         .raw()
         .toBuffer({ resolveWithObject: true });
       const { width, height } = info;
 
-      // Perceptual dedup (computed from the decoded RGBA, no extra decode) +
-      // stale-frame override. Skip only the I420 conversion + send when unchanged.
+      // Perceptual dedup check
       const thumb = thumbFromRgba(data, width, height);
       const stale = (now - lastSentAt) > MAX_STALE_MS;
 
       if (!stale && !isDifferent(lastThumb, thumb)) {
         skipped++;
-        processingFrame = false;
-        // Try to process the next pending frame immediately
-        setImmediate(processNextFrame);
+        isProcessing = false;
+        // Try next frame from queue
+        if (frameQueue) setImmediate(processQueue);
         return;
       }
 
+      // Frame is different — send it
       lastThumb = thumb;
       lastSentAt = now;
       if (skipped > 0) skipped = 0;
@@ -194,90 +204,89 @@ async function startWebRTCStream(page, offerSdp, options = {}) {
       const i420 = new Uint8ClampedArray((width * height * 3) / 2);
 
       rgbaToI420({ width, height, data: rgba }, { width, height, data: i420 });
-
       videoSource.onFrame({ width, height, data: i420 });
+
       if ((frameCount = (frameCount || 0) + 1) % 30 === 1)
         console.log(`[WebRTC] video frame #${frameCount} sent (${width}x${height}), skipped=${skipped}`);
 
-      processingFrame = false;
-      // Try to process the next pending frame immediately
-      setImmediate(processNextFrame);
+      isProcessing = false;
+      // Try next frame from queue
+      if (frameQueue) setImmediate(processQueue);
     } catch (e) {
-      processingFrame = false;
+      isProcessing = false;
       if (!e.message?.includes('premature') && !e.message?.includes('Target closed')) {
         console.error('[Frame Error]', e.message);
       }
-      setImmediate(processNextFrame);
+      // Try next frame even on error
+      if (frameQueue) setImmediate(processQueue);
     }
   };
 
+  try {
+    cdpSession = await page.context().newCDPSession(page);
 
     cdpSession.on('Page.screencastFrame', (event) => {
       try {
         // ACK immediately — non-blocking
         cdpSession.send('Page.screencastFrameAck', { sessionId: event.sessionId }).catch(() => { });
 
-        // Frame-rate cap (simple check, don't process if too recent)
-        const now = performance.now();
-        if (now - lastFrameAt < MIN_FRAME_INTERVAL_MS) return;
+        // Queue this frame (always latest)
+        frameQueue = event;
 
-        // Skip processing if already busy — prevents frame queue buildup that causes memory bloat
-        if (processingFrame) return;
-        processingFrame = true;
-        lastFrameAt = now;
+        // Trigger processing if not busy
+        if (!isProcessing) {
+          setImmediate(processQueue);
+        }
+      } catch (e) {
+        if (!e.message?.includes('premature') && !e.message?.includes('Target closed')) {
+          console.error('[Frame Event Error]', e.message);
+        }
+      }
+    });
 
-        // Process frame asynchronously but don't await it — let event loop continue
-        setImmediate(async () => {
-          try {
-            const buffer = Buffer.from(event.data, 'base64');
+    // Capture at 1.5× CSS resolution for sharpness without excess bandwidth
+    const capW = Math.round((options.width || 390) * 1.5);
+    const capH = Math.round((options.height || 844) * 1.5);
 
-            // Decode JPEG → RGBA exactly once.
-            const { data, info } = await sharp(buffer)
-              .ensureAlpha()
-              .raw()
-              .toBuffer({ resolveWithObject: true });
-            const { width, height } = info;
+    await cdpSession.send('Page.startScreencast', {
+      format: 'jpeg',
+      quality: 92,        // High quality — mobile screens warrant it
+      maxWidth: capW,
+      maxHeight: capH,
+      everyNthFrame: 1,         // Every frame — dedup handles dropping unchanged ones
+    });
 
-            // Perceptual dedup (computed from the decoded RGBA, no extra decode) +
-            // stale-frame override. Skip only the I420 conversion + send when unchanged.
-            const thumb = thumbFromRgba(data, width, height);
-            const stale = (now - lastSentAt) > MAX_STALE_MS;
+    console.log(`[StreamManager] Stream ${streamId} started at ${options.width}×${options.height}`);
 
-            if (!stale && !isDifferent(lastThumb, thumb)) {
-              skipped++;
-              processingFrame = false;
-              return;
-            }
+  } catch (err) {
+    console.error('[StreamManager] Failed to start stream:', err.message);
+    peerConnection.close();
+    throw err;
+  }
 
-            lastThumb = thumb;
-            lastSentAt = now;
-            if (skipped > 0) skipped = 0;
+  // ── Teardown on PC disconnect ────────────────────────────────────────────
+  peerConnection.onconnectionstatechange = () => {
+    const state = peerConnection.connectionState;
+    console.log(`[StreamManager] PC state: ${state} (${streamId})`);
+    if (['disconnected', 'failed', 'closed'].includes(state)) {
+      stopWebRTCStream(streamId);
+    }
+  };
 
-            const rgba = new Uint8ClampedArray(data.buffer, data.byteOffset, data.byteLength);
-            const i420 = new Uint8ClampedArray((width * height * 3) / 2);
+  activeStreams.set(streamId, {
+    peerConnection,
+    videoSource,
+    audioHandler,
+    cdpSession,
+    videoTrack,
+    audioTrack,
+  });
 
-            rgbaToI420({ width, height, data: rgba }, { width, height, data: i420 });
+  return { answer: finalSdp, streamId };
+}
 
-            videoSource.onFrame({ width, height, data: i420 });
-            if ((frameCount = (frameCount || 0) + 1) % 60 === 1)
-              console.log(`[WebRTC] video frame #${frameCount} sent (${width}x${height})`);
-
-            processingFrame = false;
-          } catch (e) {
-            processingFrame = false;
-            if (!e.message?.includes('premature') && !e.message?.includes('Target closed')) {
-              console.error('[Frame Error]', e.message);
-            }
-          }
-         lastFrameAt = now;
-
-         // Queue this frame — drop old pending frame if new one arrives faster
-         pendingFrame = event;
-
-         // Trigger processing if not busy
-         if (!processingFrame) {
-           setImmediate(processNextFrame);
-         }
+function stopWebRTCStream(streamId) {
+  const stream = activeStreams.get(streamId);
   if (!stream) return;
 
   try {
