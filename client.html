@@ -510,7 +510,7 @@
     //   return 'http://185.181.8.32:3000'; // `http://127.0.0.1:3000`; //`http://${loc.hostname}:3000`;
     // })();
 
-    const SERVER_URL = 'http://192.168.100.62:3000'; //  'http://185.181.8.32:3000'; // `http://127.0.0.1:3000`; // 
+    const SERVER_URL = 'http://31.97.117.226:3000'; // Update to your remote server IP
 
 
     const SERVER_W = 390;
@@ -534,6 +534,7 @@
 
     // ─── STATE ────────────────────────────────────────────────────────────────────
     let sessionId = null;
+    let sessionToken = null;
     let ws = null;
     let pc = null;           // RTCPeerConnection
     let streaming = false;
@@ -904,6 +905,7 @@
         if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
         const data = await r.json();
         sessionId = data.sessionId;
+        sessionToken = data.token;
         if (data.width) logicalW = data.width;
         if (data.height) logicalH = data.height;
         console.log('[Session]', sessionId);
@@ -919,7 +921,8 @@
     function openWS() {
       const proto = SERVER_URL.startsWith('https') ? 'wss' : 'ws';
       const host = SERVER_URL.replace(/^https?:\/\//, '');
-      ws = new WebSocket(`${proto}://${host}`);
+      const tokenParam = sessionToken ? `?token=${encodeURIComponent(sessionToken)}` : '';
+      ws = new WebSocket(`${proto}://${host}${tokenParam}`);
 
       ws.onopen = async () => {
         console.log('[WS] open');

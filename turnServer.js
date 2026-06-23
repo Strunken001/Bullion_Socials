@@ -56,7 +56,14 @@ function startTurnServer(publicIp) {
             console.warn('[TURN] node-turn not installed. Run: npm install node-turn');
             console.warn('[TURN] Falling back to public TURN servers (less reliable)');
         } else {
-            console.error('[TURN] Failed to start:', err.message);
+            // Port bind failure is non-critical — the Express server can still handle requests
+            // with public TURN relay fallback. Don't stop the whole app.
+            if (err.code === 'EADDRINUSE' || err.errno === -98) {
+                console.warn(`[TURN] Port 3478 already in use (likely from previous process). Skipping.`);
+                console.warn(`[TURN] Clients will use public TURN relay (openrelay.metered.ca) — less optimal but functional.`);
+            } else {
+                console.error('[TURN] Failed to start:', err.message);
+            }
         }
         return false;
     }

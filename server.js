@@ -16,7 +16,7 @@ const {
 const { startWebRTCStream, stopWebRTCStream, getAudioHandler } = require('./streamManager');
 const { handleInput } = require('./inputHandler');
 const { startTurnServer, stopTurnServer } = require('./turnServer');
-const { requireServiceKey, verifySessionToken } = require('./auth');
+const { requireServiceKey, verifySessionToken, generateSessionToken } = require('./auth');
 const { v4: uuidv4 } = require('uuid');
 const cors = require('cors');
 const fs = require('fs');
@@ -140,7 +140,7 @@ app.get('/ice-config', (req, res) => {
 });
 
 // ── Browser init ──────────────────────────────────────────────────────────────
-(async () => { await initBrowser(); })();
+const browserReady = initBrowser();
 
 const ALLOWED_PLATFORMS = {
   facebook: 'https://www.facebook.com/',
@@ -165,6 +165,7 @@ const ALLOWED_PLATFORMS = {
 app.post('/start-session', requireServiceKey, async (req, res) => {
   let context, page;
   try {
+    await browserReady;
     const { platform, width, height, userId, region, country } = req.body;
     console.log(`\n--- New Flow: Start Session ---`);
     console.log(`[API] /start-session: platform=${platform}`);
@@ -254,7 +255,7 @@ app.post('/start-session', requireServiceKey, async (req, res) => {
       }, { wsUrl: audioWsUrl, sId: sessionId });
     } catch (e) { console.warn('[AudioInjection]', e.message); }
 
-    res.json({ sessionId, width: viewWidth, height: viewHeight });
+    res.json({ sessionId, width: viewWidth, height: viewHeight, token: generateSessionToken(sessionId, userKey) });
     console.log(`[API] Session ${sessionId} | ${viewWidth}×${viewHeight}`);
 
   } catch (error) {

@@ -95,15 +95,39 @@ async function initBrowser() {
   // Allow running in non-headless mode (useful with Xvfb) by setting
   // PLAYWRIGHT_HEADLESS='false' in the environment when needed.
   const headlessEnv = process.env.PLAYWRIGHT_HEADLESS;
-  const headless = headlessEnv === undefined ? true : (headlessEnv !== 'false');
+  let headless = headlessEnv === undefined ? true : (headlessEnv !== 'false');
+
+  // If no X DISPLAY is available on the host, never attempt a headed launch.
+  // This avoids Playwright/Chromium failing with "Missing X server" on headless hosts.
+  if (!process.env.DISPLAY && headless === false) {
+    console.warn('[Browser] PLAYWRIGHT_HEADLESS=false requested but no $DISPLAY detected; forcing headless=true to avoid X server errors.');
+    headless = true;
+  }
 
   console.log(`[Browser] Launch config: headless=${headless} PLAYWRIGHT_HEADLESS=${headlessEnv}`);
 
-  browser = await chromium.launch({
-    headless,
-    args: CHROMIUM_ARGS,
-    timeout: 60000,
-  });
+  try {
+    browser = await chromium.launch({
+      headless,
+      args: CHROMIUM_ARGS,
+      timeout: 60000,
+    });
+  } catch (e) {
+    console.error('[Browser] Launch failed:', e.message);
+    // If the launch failed due to missing X server and we didn't already force headless,
+    // retry with headless true as a fallback so the service remains available.
+    if (headless === false) {
+      console.warn('[Browser] Retry launch with headless=true due to previous failure.');
+      try {
+        browser = await chromium.launch({ headless: true, args: CHROMIUM_ARGS, timeout: 60000 });
+      } catch (e2) {
+        console.error('[Browser] Retry launch also failed:', e2.message);
+        throw e2;
+      }
+    } else {
+      throw e;
+    }
+  }
 
   restartCount = 0; // reset on successful launch
 

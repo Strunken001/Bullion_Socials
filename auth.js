@@ -44,6 +44,30 @@ function requireServiceKey(req, res, next) {
 }
 
 /**
+ * Generate a per-session token for a given sessionId and userId.
+ * Token is valid for 24 hours.
+ */
+function generateSessionToken(sessionId, userId) {
+  if (!TOKEN_SECRET) return null;
+  const exp = Math.floor(Date.now() / 1000) + (24 * 60 * 60); // 24h from now
+  const payload = { sid: sessionId, uid: userId || 'anonymous', exp };
+  const payloadJson = JSON.stringify(payload);
+  const payloadBase64 = Buffer.from(payloadJson).toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '');
+  const sig = crypto
+    .createHmac('sha256', TOKEN_SECRET)
+    .update(payloadBase64)
+    .digest();
+  const sigBase64 = sig.toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '');
+  return payloadBase64 + '.' + sigBase64;
+}
+
+/**
  * Verify a per-session token. Returns the decoded payload ({ sid, uid, exp })
  * on success, or null if the token is missing/malformed/forged/expired.
  */
@@ -77,4 +101,4 @@ function verifySessionToken(token) {
   return payload;
 }
 
-module.exports = { requireServiceKey, verifySessionToken, timingSafeEqual };
+module.exports = { requireServiceKey, verifySessionToken, generateSessionToken, timingSafeEqual };

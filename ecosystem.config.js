@@ -29,15 +29,15 @@ module.exports = {
                 // SwiftShader on Windows needs this to find the DLLs
                 // (Playwright sets this internally but PM2 can lose it)
                 PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '0',
+                // Use the existing user-installed Playwright browser cache so root
+                // process doesn't need to re-download browsers on every deploy.
+                PLAYWRIGHT_BROWSERS_PATH: '/home/user/.cache/ms-playwright',
 
                 // Increase Node's default UV thread pool — sharp uses it heavily for frame decode
                 UV_THREADPOOL_SIZE: '16',
 
                 // Prevent Node from running out of heap on long sessions
                 NODE_OPTIONS: '--max-old-space-size=2048',
-                // Run Playwright in non-headless mode so Xvfb rendering includes
-                // video frames for sites like YouTube. Set to 'false' to disable.
-                PLAYWRIGHT_HEADLESS: 'false',
             },
 
             // Log files — check these when things go wrong
