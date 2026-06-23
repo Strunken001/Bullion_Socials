@@ -97,6 +97,8 @@ async function initBrowser() {
   const headlessEnv = process.env.PLAYWRIGHT_HEADLESS;
   const headless = headlessEnv === undefined ? true : (headlessEnv !== 'false');
 
+  console.log(`[Browser] Launch config: headless=${headless} PLAYWRIGHT_HEADLESS=${headlessEnv}`);
+
   browser = await chromium.launch({
     headless,
     args: CHROMIUM_ARGS,
